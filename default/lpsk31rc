@@ -1,0 +1,224 @@
+############## lpsk31 RUNTIME CONFIGURATION FILE: lpsk31rc ##########
+#                                                                   #
+# PLEASE NOTE! In order to keep the parser for this file simple,    #
+# the runtime configuration entries below must all be present and   #
+# in the order presented, since they are all read-in in a fixed     #
+# sequence. Blank lines or those starting with a # or white space   #
+# are ignored.                                                      #
+#                                                                   #
+# There are four sections, Sound card, lpsk31 Runtime, Operator and #
+# QTH and Macros fields. Please check ALL and EDIT as needed!!      #
+#                                                                   #
+#####################################################################
+#
+####### SOUND-CARD CONFIGURATION #######
+#
+# Please look in /usr/include/soundcard.h
+# (search for SOUND_DEVICE_NAMES) to find valid device names.
+#
+# Mixer device: Default is /dev/mixer.
+/dev/mixer
+#
+# Input DSP device: Default is /dev/dsp.
+/dev/dsp
+#
+# Output DSP device: Default is /dev/dsp.
+/dev/dsp
+##
+# Audio capture/recording source: Default is line.
+# Alternative is usually mic or line1 etc.
+line
+#
+# Audio recording level device: Default is igain.
+# Alternative is usually reclev or rec.
+igain
+#
+# Recording/Capture level: Useful range ~10-100. Default is 50.
+# The correct value must be found by testing, see lpsk31.html.
+50
+#
+# Volume/PCM level: Useful range ~10-90. Default is 50.
+# The correct value must be found by testing, see lpsk31.html.
+50
+#
+# Sound card mode: (STEREO | MONO). My default is STEREO because
+# I have two sources (receivers) connected to the sound card.
+STEREO
+#
+# Channel in use by lpsk31: (LEFT | RIGHT). My default is RIGHT.
+# When in MONO mode, this field is ignored. On my system at
+# least, only the left channel works in MONO.
+RIGHT
+#
+####### End of SOUND-CARD CONFIGURATION #######
+#
+####### lpsk31 RUNTIME CONFIGURATION #######
+#
+# Squelch threshold: Useful range ~3-10. My default is 5.
+# Note that a zero setting will disable the squelch function
+5
+#
+# Steady tone duration in msec: Default is 1000 msec (1 sec).
+# This is the steady tone transmitted at the beginning and tail
+# end of a transmission (pre-amble and post-amble).
+1000
+#
+# Number of reversals following and preceding the steady tone:
+# Default is 24. These phase reversals are part of the PSK31
+# pre-amble and post-amble used for synching and squelching
+24
+#
+# Morse encoder speed in wpm: Default is 20 wpm
+20
+#
+# Transmit window word-wrap column: Default is 70
+70
+#
+# Serial port device for Tranceiver CAT: Default is /dev/ttyS0
+# IN MY SETUP! Please specify the serial port device you intend
+# to use for CAT control of your tranceiver. PLEASE NOTE: CAT is
+# available only for the YAESU FT-847, the only rig I have! For
+# different tranceivers, there is no need to edit this entry BUT
+# DO NOT ACTIVATE CAT AS lpsk31 WILL ABORT!
+/dev/ttyS0
+#
+####### End of lpsk31 RUNTIME CONFIGURATION #######
+#
+#######	OPERATOR AND QTH INFORMATION #######
+#
+# All fields are required, if any are missing there will be errors.
+# All fields MUST be edited!!
+#
+# Callsign: Maximum 16 characters allowed. !!USE CAPITAL LETTERS!!
+YOUR_CALL
+#
+# Name: Maximum 16 characters allowed
+YOUR_NAME
+#
+# QTH:  Maximum 20 characters allowed
+YOUR_QTH
+#
+# QTH Locator: Maximum 6 characters allowed
+LOCATR
+#
+####### End of OPERATOR AND QTH INFORMATION #######
+#
+####### MACROS (Prepared messages for transmission) #######
+#
+# These are various typical or standard messages transmitted
+# during PSK31 (and other) digital mode QSO's. There can be a
+# maximum of 9 entries which will be bound to the function keys
+# F1-F9 in that order. Any number of entries up to 9 are allowed
+# but the format is fixed in order to keep the parser simple:
+#
+# Each entry starts with a line which contains a label, enclosed
+# in [ ] square brackets, to be shown in the PSK31 menu of
+# keystroke commands. A maximum of 19 characters are allowed
+# within the square brackets. PLEASE NOTE that [ or ] must not
+# appear in the message text for obvious reasons!
+#
+# Each label is followed by the message to be transmitted in lines
+# of a maximum of 80 characters, although it is probably better to
+# limit lines to less than 70 characters for clarity. Blank lines
+# and lines starting with a # or white space are ignored.
+#
+# Lines ending with a tilde ~ signify that lpsk31 should remain in
+# transmit mode so that text can be appended to the macro manually,
+# e.g. signal report, name etc. The up arrow ^ signifies that a
+# 'new-line' signal should be sent before the text.
+# PLEASE NOTE that ^ and ~ must not appear in the message text
+# for obvious reasons!
+#
+##### Tags in Macros #####
+#
+# lpsk31 has a limited tag replacement ability, e.g. there are 12
+# different tags that can be entered in the macros and these will
+# identified and replaced with suitable values during operation:
+#
+# "Local information" tags, e.g. relating to the operator of lpsk31.
+# "Remote information" tags, e.g. relating to the remote operator.
+#
+# All tags must be enclosed in <> similar to HTML tags. The following
+# tags are currently recognized:
+#
+# <own-call> <own-name> <own-qth> <own-loc> <own-rst>
+# <rem-call> <rem-name> <rem-qth> <rem-loc> <rem-rst>
+# <date-time> <op-freq>
+#
+# They will be replaced during macro transmission with the following
+# values respectively:
+#
+# Local Operator's call, name, QTH, QTH locator and RST report.
+# Remote Operator's call, name, QTH, QTH locator and RST report.
+# Current UTC date and time, the operating frequency.
+#
+#
+# PLEASE NOTE: All but the RST report values for the Local operator
+# are taken from the OPERATOR AND QTH INFORMATION block in this file.
+# All other values are taken from the QSO Record fields, under the
+# Receive window, as it is filled. A partially filled QSO record is
+# still usable since values become available as they are entered but
+# please note that empty fields are entered as null (blank) strings
+# in place of the tags!
+#
+# Macro for F1
+#
+[CALL CQ]
+^CQ CQ CQ de <own-call> <own-call> <own-call>
+CQ CQ CQ de <own-call> <own-call> <own-call>
+CQ CQ CQ de <own-call> <own-call> <own-call>
+pse KKK
+#
+# Macro for F2
+#
+[CALLSIGNS/HELLO]
+^<rem-call> <rem-call> <rem-call> de <own-call> <own-call> <own-call>
+Hello dr op and tks for your call ~
+#
+# Macro for F3
+#
+[RST/NAME/QTH/QSL]
+^Your RST: <rem-rst> <rem-rst> <rem-rst>
+My name: <own-name>  <own-name>
+My QTH: <own-qth> <own-qth>
+My Loc: <own-loc> <own-loc>
+QSL is OK via bureau or direct
+#
+# Macro for F4
+#
+[KEYBOARD BTU]
+^Now keys BTU dr op <rem-name>
+<rem-call> <rem-call> de <own-call> <own-call> pse KKKN
+#
+# Macro for F5
+#
+[REMT & OWN CALLS]
+^<rem-call> <rem-call> de <own-call> <own-call> ~
+#
+# Macro for F6
+#
+[MY STATION INFO]
+^My station info:
+Rig: YOUR RIG o/p 30W  Ant: YOUR ANTENNA
+Computer: YOUR COMPUTER Sound: YOUR SOUND CARD
+O/S: YOUR LINUX DISTRO  Software: <app-version> ~
+#
+# Macro for F7
+#
+[FINAL & SIGN-OFF]
+^My tks for a nice PSK31 QSO dr op <rem-name>.
+I wish you and your family best 73's and good health.
+Until we meet again, good luck with PSK31 dx and bye-bye.
+Logged by <app-version> on <date-time> UTC on <op-freq> MHz.
+<rem-call> <rem-call> de <own-call> <own-call> SKSK *
+#
+# Macro for F8
+#
+[REPLY TO CQ CALL]
+^<rem-call> <rem-call> de <own-call> <own-call> <own-call> pse KKK
+#
+# Macro for F9
+#
+[QRZ de YOUR CALL]
+^QRZ QRZ QRZ de <own-call> <own-call> <own-call> pse KKK
+#

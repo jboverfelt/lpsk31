@@ -1,0 +1,23 @@
+ lpsk31:
+ =======
+ lpsk31 is a ncurses-based Linux console application for Amateur Radio
+ communications in the PSK31 digital mode. lpsk31 detects the carrier
+ phase changes that make a PSK31-encoded character by reading audio
+ samples from the DSP in the computer's sound card, connected to the
+ output of a receiver. The audio signal is processed by a software phase
+ detector which, for BPSK, detects '1' or '0' states ('0' signaled by a
+ 180 deg phase reversal) and the resulting stream of BPSK31-coded bits
+ is decoded into ASCII characters for printing to the Receive window of
+ lpsk31. In QPSK the carrier phase changes are processed by a
+ soft-decision Viterbi decoder which provides error correction in bad
+ receiving conditions.
+
+ PLEASE NOTE that from version 0.8 the lpsk31rc file has changed slightly.
+ Please read the version history in the HTML manual doc/lpsk31.html for
+ more details.
+
+ PLEASE READ the HTML manual doc/lpsk31.html for installation instructions.
+
+ Neoklis Kyriazis  15 August 2002
+
+

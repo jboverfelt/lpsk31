@@ -1,0 +1,526 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<meta name="generator" content="Bluefish 1.0.7">
+<title>lpsk31 Manual</title>
+<meta name="author" content="Neoklis Kyriazis">
+<meta name="copyright" content="GPL v2.0 or higher">
+<meta name="keywords" content=
+"Console PSK31 communications application">
+<meta name="description" content=
+"GUI PSK31 communications application">
+<meta name="ROBOTS" content="INDEX, FOLLOW">
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+</head>
+<body>
+<h3>lpsk31 Manual</h3>
+<ol>
+<li><a href="#Introduction">Introduction</a>
+<ul>
+<li><a href="#Use">Usage</a></li>
+</ul>
+</li>
+<li><a href="#Features">Features</a>
+<ul>
+<li><a href="#Soundcard">Sound-card set-up</a></li>
+<li><a href="#PhaseDetect">Software phase detector</a></li>
+<li><a href="#PhaseTune">Phase/Tune Indicator</a></li>
+<li><a href="#Macros">Macros in Transmit mode</a></li>
+<li><a href="#RecordQSO">QSO Recording and Logging</a></li>
+<li><a href="#Characters">Recognized characters</a></li>
+</ul>
+</li>
+<li><a href="#Compilation">Compilation</a></li>
+<li><a href="#Usage">Command line options</a></li>
+<li><a href="#Operation">Operation</a>
+<ul>
+<li><a href="#Interface">lpsk31 User Interface</a></li>
+<li><a href="#Configure">Configuration and set-up</a></li>
+<li><a href="#Receive">Receiving PSK31 signals</a></li>
+<li><a href="#QSO">Conducting a QSO</a></li>
+</ul>
+</li>
+<li><a href="#Bugs">Bugs and annoyances</a></li>
+<li><a href="#Version">Version history</a></li>
+<li><a href="#Copying">Copying</a></li>
+</ol>
+<p><a name="Introduction" id="Introduction"><b>1.
+Introduction</b></a><br>
+lpsk31 is a ncurses-based Linux console application for Amateur
+Radio communications in the PSK31 digital mode. lpsk31 detects the
+carrier phase changes that make a PSK31-encoded character by
+reading audio samples from the DSP in the computer's sound card,
+connected to the output of a receiver. The audio signal is
+processed by a software phase detector which, for BPSK, detects '1'
+or '0' states ('0' signaled by a 180 deg phase reversal) and the
+resulting stream of BPSK31-coded bits is decoded into ASCII
+characters for printing to the Receive window of lpsk31. In QPSK
+the carrier phase changes are processed by a soft-decision Viterbi
+decoder which provides error correction in bad receiving
+conditions.</p>
+<p>Transmission of PSK31-encoded characters is realized by writing
+pre-computed audio samples to the sound card's DSP and feeding the
+resultant audio signal to the transmitter's input. The transmitter
+must be in the SSB mode during transmission but for reception a
+narrow-bandwidth mode like CW-Narrow is preferable since PSK31
+theoretically only occupies about 32 Hz of bandwidth. lpsk31 has
+built-in CAT control capability for the Yaesu FT-847 Transceiver
+which, when enabled, can change the operating mode
+automatically.</p>
+<p><a name="Use" id="Use"><b>Usage:</b></a> lpsk31 [-hv]</p>
+<p>-h: Print usage information and exit.</p>
+<p>-v: Print version number and exit.</p>
+<p><a name="Features" id="Features"><b>2. Features</b></a><br></p>
+<p><a name="Soundcard" id="Soundcard"><b>Sound-card
+set-up</b></a><br>
+lpsk31 automatically prepares the sound card and sets the line
+input level at the mixer to about 50%. For proper operation the
+level of the input signal must be adjusted from the receiver, if
+volume control is available, or by changing the value of the
+Recording/Capture level in the ~/lpsk31/lpsk31rc run time
+configuration file, if audio is taken from a fixed-volume source
+such as the "data" i/o port. The output audio level is also set to
+50% although again this will need to be set-up properly for
+low-distortion transmission. Please see the <a href=
+"#Operation">Operation</a> section for details on how to set-up the
+sound card.</p>
+<p><a name="PhaseDetect" id="PhaseDetect"><b>Software phase
+detector</b></a><br>
+lpsk31 was designed from the beginning to be simple and efficient,
+decoding PSK31 signals using only integer arithmetic and simple
+processing methods. It uses the computer's sound card to read the
+'1' and '0' elements that make the PSK31-coded characters by
+implementing a software detector of the received audio signal's
+phase shift. This software phase detector is centered on a nominal
+frequency of 500 Hz and it operates by integrating the output from
+an in-phase and a quadrature detector over the period of a PSK31
+element (32 msec). The carrier phase is then calculated by an
+integer arctan function implemented using tables to calculate the
+arc tan (in degrees) of the (quadrature/in-phase) signal ratio.
+Phase changes are calculated by comparing consecutive values of the
+carrier's phase after every PSK31 element.</p>
+<p><a name="PhaseTune" id="PhaseTune"><b>Phase/Tune
+Indicator</b></a><br>
+lpsk31 has a simple visual aid for tuning the receiver accurately
+and displaying the carrier's phase changes. At the lower left
+corner of the ncurses screen there is a box with three 'graphical'
+indicators of the carrier phase, phase slip rate (= tuning error)
+and squelch (signal) level. For correct tuning the squelch bar
+graph must be at a maximum, the phase slip at zero (green sector)
+and the phase indicator should show phase changes with the 'o'
+pointer moving to opposite dots on the circle for BPSK, or to
+positions about 90 or 180 deg from each for QPSK.<br>
+More on this in the <a href="#Operation">Operation</a> section.<br>
+In the center of the carrier phase display the phase detector
+channel in use (A or B) is shown.</p>
+<p><a name="Macros" id="Macros"><b>Macros in Transmit
+mode</b></a><br>
+lpsk31 allows 9 pre-recorded Macros to be bound to the F1-F9
+Function keys for easy transmission of repeated messages like
+call-sign exchanges, station info, BTU, sign-off etc. Theses Macros
+are stored in the 'lpsk31rc' run time configuration file (in
+~/lpsk31/) and are invoked by keying the relevant Function key.
+Short labels for these Macros are also stored in lpsk31rc and are
+displayed in the 'Commands' boxed window at the bottom right of the
+screen, for easy identification. For even more operating
+convenience lpsk31 allows the use of 'tags' embedded in the Macros
+for automatic insertion of certain basic strings in the transmitted
+message: call-sign, RST, name, QTH and QTH locator, for both the
+operator and the remote station, and the current UTC date and time
+- e.g. 11 tags altogether in this version. More on this in the
+<a href="#Operation">Operation</a> section.</p>
+<p><a name="RecordQSO" id="RecordQSO"><b>QSO Recording and
+Logging</b></a><br>
+lpsk31 can save details of activity during its operation in three
+separate files on the disk:<br>
+1. In ~/lpsk31/record.txt all characters printed in the Transmit or
+Receive window including Macros are recorded 'raw' e.g. in real
+time and unedited. This makes it possible to check everything
+transmitted or received during operation if something goes
+wrong.<br>
+2. In ~/lpsk31/log.txt all details of a QSO entered in the QSO
+Record form (under the Receive window) are saved in text form with
+the addition of date and time to form a standard station log.<br>
+3. In ~/lpsk31/log.adif an ADIF-formatted version of the QSO Record
+is saved for direct uploading to eQSL.cc or other sites that can
+accept ADIF formatted logs.</p>
+<p><a name="Characters" id="Characters"><b>Recognized
+characters</b> The alphabetic characters, punctuation marks and
+special codes that lpsk31 can currently recognize are in the header
+file lpsk31.h. The table of characters has the ASCII symbol on the
+left, the Varicode bit pattern in the middle and the equivalent HEX
+code on the right.</a></p>
+<p><a name="Compilation" id="Compilation"><b>3.
+Compilation</b></a><br>
+Before compiling lpsk31, it is possible to customize some entries
+in the header file lpsk31.h. These are the colors used in the
+ncurses interface and can be changed by replacing the colors in the
+five #define statements as follows:</p>
+<pre>
+  #define LABEL_COLOR      CYAN            /* Color of window labels   */
+  #define BORDER_COLOR     CYAN            /* Color of window boxes    */
+  #define KEYBD_COMMANDS   MAGENTA         /* Color of key commands    */
+  #define STANDOUT_COLOR   YELLOW          /* Standout (bold) color    */
+  #define FORM_COLOR       YELLOW_ON_BLUE  /* Color in QSO record form */
+
+</pre>
+These colors can be replaced with the color pair names, defined
+below these entries in the header file lpsk31.h.
+<p>A list of all characters, punctuation marks and special signals
+recognized by lpsk31 are listed in the lpsk31.h file. Different
+characters can be entered in the table in the lpsk31.h header file
+before compilation, following the instructions in there.</p>
+<p>Compilation is very simple, just run 'make' in the lpsk31 source
+directory to produce the executable binary 'lpsk31'. This can then
+be copied to a suitable location, usually /usr/local/bin or
+/usr/bin. There is only this hypertext documentation file which you
+can copy to a location of your choice. Also the default lpsk31rc
+configuration file in the default/ directory must be copied to a
+directory named lpsk31 in the Home directory and then edited for
+proper operation.<br>
+You can also type 'make install' to install the 'lpsk31' binary
+into /usr/local/bin, this hypertext documentation in /usr/local/doc
+and the default lpsk31rc run time configuration file to a directory
+named lpsk31 in the Home directory. If ~/lpsk31 does not exist, it
+will be created.<br>
+Type 'make uninstall' to remove the 'lpsk31' binary, the
+'lpsk31.html' documentation file and the ~/lpsk31/ directory.<br>
+Type 'make clean' to remove all files produced by compilation
+except for the 'lpsk31' binary, from the source directory.<br>
+Type 'make distclean' to remove all but the files that were
+included in the original source directory.</p>
+<p><a name="Usage" id="Usage"><b>4. Command line
+options</b></a><br>
+lpsk31 can be invoked with the following options:</p>
+<p>-h: Print this usage information and exit.</p>
+<p>-v: Print version number and exit.</p>
+<p><a name="Operation" id="Operation"><b>5.
+Operation</b></a><br></p>
+<p><a name="Interface" id="Interface"><b>lpsk31 User
+Interface</b></a><br>
+lpsk31 is a ncurses application for the (Linux) console. On
+starting the following are presented to the user:<br></p>
+<p>1. The Transmit window: At the top of the screen the Transmit
+window prints all characters typed by the user in the Transmit mode
+including Macros when activated by keying one of F1-F9 function
+keys. If the "Record QSO's" ('R' keystroke) command is enabled, all
+characters printed to this window are also saved in the
+~/lpsk31/record.txt file.</p>
+<p>2. The Receive window: Below the Transmit window, the Receive
+window displays all characters decoded form the PSK31 signal. If
+the "Record QSO's" ('R' keystroke) command is enabled, all
+characters printed to this window are also saved in the
+~/lpsk31/record.txt file.</p>
+<p>3. The Phase/Tune window: At the bottom left corner the
+Phase/Tune window displays some 'graphical' aids for correctly
+tuning the receiver. At the bottom of this window, a bar graph
+indicates the squelch (signal) level. This is derived from the
+averaged vector magnitude of the in-phase and quadrature signal
+detectors and it peaks when the audio (carrier) frequency is at the
+required 500 Hz.<br>
+Above this another bar-graph displays the phase slip rate of the
+psk31 carrier and is derived from the phase detector's averaged
+output. The phase slip rate is equivalent to a frequency error in
+the PSK31 carrier relative to the 500 Hz nominal center. This bar
+graph must be centered for correct tuning.</p>
+<p>Above this is the PSK31 carrier phase indicator. It is a circle
+of 16 green dots, each representing a step of 22.5 degrees
+anti-clockwise, relative to the middle-right reference dot. An 'o'
+is used as the 'pointer' and it shows the carrier phase at the end
+of each PSK31 element. For a BPSK31 signal, ideally it should jump
+between two opposing dots on the circle, indicating 180 phase
+changes. For a QPSK signal, the indicator should jump to dots at
+180 or +-90 degrees to each other.</p>
+<p>4. The QSO Record form window: This is a single-row ncurses form
+just below the Receive window and is opened by the F10 key command.
+In this, the remote station call-sign, RST-in, RST-out, remote
+operator's name, QTH, Locator and the operating frequency are
+entered during a QSO and become available to Macros after a TAB or
+RETURN keystroke. The entries in the form can be saved to
+~/lpsk31/log.adif and ~/lpsk31/log.txt with the F11 keystroke.</p>
+<p>5. The Keystroke Commands window: Most of the important key
+commands recognized by lpsk31 are displayed in this window. The
+Function keys <b>F1</b> to <b>F9</b> are reserved for starting
+Macro transmission. Each Macro has an associated label which is
+displayed next to the Function key that starts it and these labels
+are user-defined in the ~/lpsk31/lpsk31rc file together with the
+Macro text.<br>
+Please note that Macro transmission is interrupted with the
+<b>SPACE</b> key. <b>ESC</b> has no effect on Macros.</p>
+<p>The other commands are as follows:<br>
+<b>F10:</b> Opens a new QSO record form for entering call-sign,
+signal reports, QTH, Locator and Frequency. If the transceiver in
+use is an FT847 and CAT is enabled, then RST-out and Frequency are
+obtained automatically from the receiver via CAT commands.<br>
+If unsaved data form a previous form exist in the buffer, a
+confirmation request to save to file is displayed.</p>
+<p>The <b>TAB</b> key makes the current field available to Macro
+tags and moves the cursor to the next field.</p>
+<p>The <b>RET(ENTER)</b> key enters all fields to a buffer and
+closes the form. Note that the following fields are validated as
+follows:<br>
+Call-sign: Alphanumeric characters and / only.<br>
+RST: Minimum 336 and maximum 599.<br>
+Locator: A-S, A-S, 0-9, 0-9, A-X, A-X<br>
+Frequency: 0.05-9999 (MHz).<br>
+If validation fails, the form will not close! Make sure your
+entries match the validation criteria before Entering the form
+data.</p>
+<p><b>E or e:</b> Opens the QSO record form for editing existing
+entries.</p>
+<p><b>F11:</b> Saves current form data to ~/lpsk31/log.txt and
+~/lpsk31/log.adif after requesting a confirmation. This key works
+only when a new form has been edited in some way and Entered. F10
+cancels the Save.</p>
+<p><b>F12:</b> Toggle Transmit/Receive mode. If the transceiver in
+use is an FT847 and CAT is enabled, then it will be switched to SSB
+in Transmit and CW-N in Receive. This key will initiate a Pre-amble
+signal when going to Transmit and a Post-amble signal when going to
+Receive. Pre-amble is a steady tone followed by phase reversals and
+Post-amble the opposite. The duration of the tone and reversals is
+user-specified in ~/lpsk31/lpsk31rc.</p>
+<p><b>M or m:</b> Toggle PSK31 modes. There are three supported
+modes, BPSK, QPSK-USB and QPSK-LSB. If an FT847 Transceiver is in
+use and CAT is enabled, lpsk31 will switch the Transceiver to the
+right mode (USB for BPSK and QPSK-USB and LSB for QPSK-LSB).</p>
+<p><b>Ctrl-W:</b> Initiates transmission of the call-sign in
+CW/Morse. This command work only when lpsk31 is in Transmit
+mode.</p>
+<p><b>R or r:</b> Toggles the raw recording of all characters
+printed in the Receive and Transmit windows including Macros. This
+option is ON by default since it is quite useful.</p>
+<p><b>T or t:</b> Toggles CAT control for the FT847 transceiver. Do
+not activate if other rigs are in use since it will cause
+problems!</p>
+<p><b>K or k:</b> Capitalize letters in the Transmit window. All
+letters including text from Macros are capitalized before printing
+and transmission.</p>
+<p><b>Esc:</b> The Escape key will cancel most current operations
+like manual transmission, the QSO record form etc. When in Receive
+mode it quits lpsk31 so watch it!</p>
+<p>There are some other key commands used mainly for testing and
+debugging but please note that their operation may not be very
+reliable:</p>
+<p><b>W or w:</b> Toggles writing of the audio samples that are
+sent to the DSP to the file lpsk31.bin. This file can then be read
+using the command below for testing and debugging. Please note that
+there is no indication of the status of this command and that it
+has to be toggled OFF to enable reading of lpsk31.bin.</p>
+<p><b>F or f:</b> Enables reading and decoding the DSP samples from
+lpsk31.bin for test purposes. When finished, lpsk31 reverts to its
+normal mode of reading directly from the DSP.</p>
+<p><b>S or s:</b> Toggles the recording of DSP samples of the audio
+signal to the file lpsk31.bin. The file can then be read with the
+command above when recording is toggled OFF. Please note that
+normal operation of lpsk31 is suspended during signal
+recording.</p>
+<p><a name="Configure" id="Configure"><b>Configuration and
+set-up</b></a><br>
+After compilation and installation the ~/lpsk31/lpsk31rc run time
+configuration file MUST be edited for proper operation! To do this,
+load ~/lpsk31/lpsk31rc into your favorite editor and make sure the
+you check ALL the configuration fields in the file and that you
+properly edit all the ones that must be edited. There are four
+sections, Sound card, lpsk31 Run time, Operator/QTH info and Macros
+fields. Please check ALL and EDIT as needed!! There are more
+detailed instructions in the file itself so please follow them for
+a proper set-up. In particular, station details like Call-sign,
+operator's name and QTH etc must be edited for Macros to be
+usable.</p>
+<p>Next, the sound card must be set up. For this to be done, the
+receiver's audio output should be connected to the computer's sound
+card (usually to the 'line' input) and the receiver tuned to some
+stable carrier signal with no am modulation. Modern HF transceivers
+have general coverage receivers with DSP audio filters down to 25
+or 50 Hz bandwidth and this makes it possible to use a local
+broadcast station as a signal source.</p>
+<p>With the narrowest bandwidth selected, start lpsk31 and
+fine-tune the receiver for a 500 Hz beat frequency output, using
+the Squelch level (the bar-graph at the bottom of the Phase/Tune
+boxed window) as an approximate guide, e.g. tune for a maximum
+indication on the bar-graph. If this goes full-scale then reduce
+the receiver's volume level until a maximum indication of 80-90% is
+achieved. If the audio output is taken from a fixed-level outlet
+(like the 'data' port) the only way to set the correct input level
+is to edit the Recording/Capture level value in the
+~/lpsk31/lpsk31rc file by trial and error for the correct
+setting.</p>
+<p>To make sure that the receiver is accurately tuned for a 500 Hz
+audio output, slowly tune the receiver while watching the carrier
+phase indicator (the circle of green dots in the Phase/Tune window)
+until the 'o' indicator holds a steady position or moves around
+very slowly. This indicates that the phase slip rate (= frequency
+error) is nearly zero, and this should be confirmed by the
+phase-slip bar-graph, below the phase indicator, showing its
+pointer in the center of the green sector. Please note that a
+tuning step of 1 Hz or less if available is needed for this very
+tricky operation! Such are the demands of the PSK31 mode.</p>
+<p>For PSK31 transmission, the DSP output level needs to be set up
+for minimum distortion in the transmitter. The Volume/PCM level
+setting in ~/lpsk31/lpsk31rc can be edited to adjust the audio
+output level but if the setting needs to be below approximately 20%
+then a simple resistive attenuator will be needed ahead of the
+transmitter's audio input. In each case the best way to set the
+sound card output level would be to have the transmitter's settings
+(Mic gain, ALC or other appropriate control) at an average or
+'normal' level and adjust the audio level so that the RF output
+power is about 50% or less of the rated maximum power. This will
+ensure that distortion is kept to a minimum and the dissipation of
+the final stage within its ratings.</p>
+<p><a name="Receive" id="Receive"><b>Receiving PSK31
+signals</b></a><br>
+To receive BPSK signals, start lpsk31 in a console and tune-in a
+BPSK31 carrier as follows: Set up the receiver for a narrow-band
+mode (normally this would be CW-Narrow, and if available a DSP
+audio filter with a bandwidth of 100 Hz or less should be used) and
+then slowly tune the receiver until the squelch level bar-graph
+peaks. Then carefully fine-tune the receiver until the phase slip
+bar-graph centers and the BPSK31 signal starts printing in the
+receive window. For an accurately tuned signal, the carrier phase
+indicator should jump between opposing dots in the circle,
+indicating a 180 deg phase shift.</p>
+<p>However all this is easy to say, since in practice the carrier
+phase indication is affected by path length changes, fading, noise,
+QRM etc. Also, any frequency errors in tuning the receiver, will
+appear as a steady drift of the pointer (phase slip) around the
+circle, confusing the issue further. A lot of practice is needed
+before the user becomes familiar with these (very limited) tuning
+aids and able to tune in a PSK31 signal quickly. This is a
+limitation deriving from the simplicity of the lpsk31 phase
+detection scheme (no FFT or waterfall or signal spectrum display
+available).</p>
+<p>It is possible to record and decode a PSK31 signal from a file.
+This is done by toggling the 'S' key command to record the PSK31
+signal to a file that will be called lpsk31.bin in the current
+directory. The format is plain binary so the file can become quite
+large for a long recording. To decode the recorded signal, toggle
+'S' to OFF and key the 'F' command. Please note that all this is
+mainly a debugging facility and hardly useful, and that there is no
+status indication for these commands.</p>
+<p>Receiving QPSK signals is similar to BPSK but requires even more
+accurate tuning of the receiver. Please note that the operating
+mode of the Transceiver during transmit and receive must match that
+of lpsk31 as selected with the 'M' key command.</p>
+<p><a name="QSO" id="QSO"><b>Conducting a QSO</b></a><br>
+As usual to make a QSO with another station using PSK31 you may
+call CQ or reply to a CQ. Calling CQ would normally be done using a
+prepared Macro bound to a Function key (F1-F9). Hitting any of
+these keys will change lpsk31 to Transmit mode and start sending
+the Macro. When the Macro is finished, lpsk31 will revert to
+Receive mode unless an up-arrow '^' is the last character in the
+Macro in which case it remains in Transmit so that a manually typed
+message can follow the Macro. Reversion to Receive would then be
+done by hitting the F12 key.<br>
+Please note that Macro transmission can be interrupted only with
+the <b>SPACE</b> key. <b>ESC</b> has no effect on Macros.</p>
+<p>When a station replies to a CQ it would normally be netted
+closely and characters transmitted should appear in the Receive
+window. If there is a significant frequency error it will cause
+errors in decoding but correcting this error from the main dial may
+cause the remote station to loose reception so using the RIT
+control may be advisable. This can also cause problems since lpsk31
+requires accurate tuning and using RIT can confuse things.</p>
+<p>Once two-way contact is established, at least the station's
+call-sign, RST, and the QSO frequency must be entered in the QSO
+Record form before it can be saved to ~/lpsk31/log.adif and
+~/lpsk31/log.txt. Any information entered in the form is available
+to any relevant 'tags' in the Macros when the TAB key is hit. If
+any fields are not edited, lpsk31 enters blanks in place of tags!
+Please note that during transmission no entries can be made to the
+QSO Record form.</p>
+<p>To reply to a CQ, tune in the station accurately and type its
+call-sign, signal report and frequency in the QSO Record form. Then
+prepared Macros can be used to reply to the call and conduct a QSO.
+Have a look in ~/lpsk31/lpsk31rc for some typical prepared
+Macros.<br>
+NOTE: You will need to edit at least some of these!!</p>
+<p><a name="Bugs" id="Bugs"><b>6. Bugs and deficiencies</b></a><br>
+I have fixed whatever bugs I came across testing lpsk31 but there
+may be some hiding, waiting for the right conditions to appear.</p>
+<p>The PSK31 phase detector algorithm may need further improvements
+to make it more tolerant to fading and noise. The biggest problem
+seems to be adjacent strong signals raising the AGC and reducing
+the level of the PSK signal being decoded.</p>
+<p>The use of a simple integer-only DSP decoding process makes it
+necessary to run the software phase decoder/synthesizer at a 500 Hz
+center frequency. This also makes it necessary to run the receiver
+with a CW pitch setting of 500 Hz. This well below the usual
+700-800 BFO pitch setting and will probably make it necessary to
+change BFO settings for CW work.</p>
+<p>The lack of AFC, Waterfall or Spectrum display makes it
+necessary to manually tune the receiver accurately for reception.
+This can be difficult in poor signal conditions at least, if not
+always!</p>
+<p><a name="Version" id="Version"><b>7. Version
+history</b></a><br></p>
+<p><b>Version 0.1</b> First beta release of the basic lpsk31
+decoding command line tool.</p>
+<p><b>Version 0.2</b> Added the ability to work in either stereo or
+mono mode so that more than one audio sources can be connected to
+the sound card without switching or removing plugs.</p>
+<p><b>Version 0.3</b> Changed the phase detection scheme from a
+tunable PLL to a fixed frequency phase detector with no AFC. Due to
+the nature of PSK31 the phase lock or AFC schemes required the
+tuning to be within +- 4 Hz before a lock was achieved and this was
+little help to the tuning process. Also the continued phase changes
+made the PLL/AFC loops difficult to keep stable in noisy
+conditions.</p>
+<p><b>Version 0.4</b> Added a full ncurses user interface including
+a tuning/phasing indicator, separate Transmit/Receive windows, a
+lot of keystroke commands, macros for automated transmission of
+some fixed message sequences, a Morse identifier and a CAT
+interface specific to the Yaesu FT-847 (that's the only rig I
+have!).</p>
+<p><b>Version 0.5</b> Implemented QPSK operation with the help of
+Peter Martinez who kindly provided Pascal source code for the
+Viterbi decoder which I ported to C and incorporated in lpsk31.</p>
+<p><b>Version 0.6</b> Divided some large functions into smaller
+ones to streamline the source code and improve readability.<br>
+Further edited the Viterbi source code so that it integrates
+seamlessly with the internal workings of lpsk31 (changed the
+accepted range of phase angles from 0-256 to 0-360).<br>
+Changed the phase detector scheme so that carrier phase and phase
+change are in the range 0-360 deg instead of +-0-180 deg. to match
+the Viterbi decoder scheme.<br>
+Fixed some minor bugs and streamlined some code.</p>
+<p><b>Version 0.7</b> Fixed a bug that caused a seg fault when a
+new macro was selected without returning to receive after the
+previous one.</p>
+<p><b>Version 0.8</b> Changed the sound card set-up function so
+that the Recording Level device (igain or reclev) is not selected
+automatically since this can be unreliable. Instead, the Recording
+Level device is specified in the ~/lpsk31/lpsk31rc file. PLEASE
+NOTE that this makes this version incompatible with existing
+lpsk31rc files! If you want to keep your original lpsk31rc files,
+then you need to add the Recording Level device name after the
+Recording Source name entry. Please see the defaults/lpsk31rc file
+entries for sound card set-up.</p>
+<p><b>Version 0.9</b> Fixed buggy 'strncpy()' statements that could
+possibly cause segmentation faults when reading the lpsk31rc
+file.</p>
+<p><b>Version 1.0</b> Added two additional tags that can be used in
+Macros:<br>
+&lt;op-freq&gt; is replaced by the current operating frequency.<br>
+&lt;app-version&gt; is replaced by the name and version of this
+application.</p>
+<p><b>Version 1.1</b> After a bug report from Juha Vierinen
+regarding seg faulting of xnec2c, my graphical adaptation of NEC2,
+I changed all "sprintf" commands to "snprintf" to avoid buffer
+overruns. Following on the above changes, I revised all similar
+situations in lpsk31 source code and changed all "sprintf" commands
+to "snprintf" just in case. While going through the lpsk31 source
+code, I also fixed some minor bugs like typos and tidied error
+messages.</p>
+<p><a name="Copying" id="Copying"><b>8. Copying</b></a> This
+software package is released under the GNU Public License. Please
+see the COPYING file for more details.</p>
+<p>This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+General Public License for more details.</p>
+July 22 2002.
+<p><!-- Created: Tue Jun 25 10:36:53 EEST 2002 -->
+<!-- hhmts start -->
+Last modified: Sun Feb 9 12:19:38 EET 2003 <!-- hhmts end --></p>
+</body>
+</html>
