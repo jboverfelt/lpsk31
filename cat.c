@@ -7,7 +7,6 @@
  *  lpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2001  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -22,23 +21,10 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-#include "lpsk31.h"
+#include "cat.h"
 
 /* Runtime config data */
 rc_data_t rc_data;
-
-/* Command codes for FT847 CAT */
-unsigned char
-  CAT_ON[]     = {    0, 0, 0, 0, 0x00 },
-  CAT_OFF[]    = {    0, 0, 0, 0, 0x80 },
-  PTT_ON[]     = {    0, 0, 0, 0, 0x08 },
-  PTT_OFF[]    = {    0, 0, 0, 0, 0x88 },
-  MODE_LSB[]   = {    0, 0, 0, 0, 0x07 },
-  MODE_USB[]   = {    1, 0, 0, 0, 0x07 },
-  MODE_CW[]    = {    2, 0, 0, 0, 0x07 },
-  MODE_CWR[]   = {    3, 0, 0, 0, 0x07 },
-  MODE_CWN[]   = { 0x82, 0, 0, 0, 0x07 },
-  MODE_CWNR[]  = { 0x83, 0, 0, 0, 0x07 };
 
 /*------------------------------------------------------------------------*/
 
@@ -62,16 +48,13 @@ Read_Rx_Status( char *mode, char *freq, char *rst )
   /* 5-byte strings to and from the transceiver */
   unsigned char cmnd_parm[5];
 
-  int temp;
-
   bzero( cmnd_parm, 5 );
-
   if( isFlagSet(ENABLE_CAT) )
   {
 	/* Read Rx status (S-meter) */
 	Write_Tcvr_Command( READ_RX_STATUS );
 	Read_Tcvr_Serial( cmnd_parm, 1 );
-	temp = cmnd_parm[0] & S_METER;
+	int temp = cmnd_parm[0] & S_METER;
 
 	/* Keep S-meter report in range 3-9 */
 	temp = temp/4 + 3;

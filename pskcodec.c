@@ -1,13 +1,12 @@
 /*  pskcodec.c
  *
- *  PSK31 coder/decoder functions of lpsk31 application
+ *  PSK31 coder/decoder functions of xpsk31 application
  */
 
 /*
- *  lpsk31: An application to transmit and receive
+ *  xpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2002  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -22,24 +21,19 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-#include "lpsk31.h"
-
-/* Pointer to samples file */
-extern FILE *samples_fp;
+#include "pskcodec.h"
 
 /* Index to sine wave lookup table */
 int sine_idx;
 
 extern int
-  num_chan,    /* Stereo(=2) or Mono(=1) selection */
-  chan_used,   /* Channel in use: left=0, right=1  */
-  buffer_size; /* DSP signal samples buffer        */
+  xmit_buf_size, /* Xmit DSP signal samples buffer    */
+  recv_buf_size, /* Recv DSP signal samples buffer    */
+  recv_buf_idx;	 /* Index to Rx signal samples buffer */
 
-/* Signal/DSP samples buffer. 2x size for Stereo */
-extern unsigned char *samples_buffer;
-
-/* File for recording QSO's */
-extern FILE *qso_record_fp;
+/* Signal samples buffers */
+extern short *xmit_buffer;
+extern short *recv_buffer;
 
 /* Runtime configuration data */
 extern rc_data_t rc_data;
@@ -47,6 +41,11 @@ extern rc_data_t rc_data;
 /* Varicode alphabet in HEX */
 int varicode_table[NUM_VARICODE_CHARS] = VARICODE_ALPHABET;
 
+/* cos lookup wavetable */
+static int *cosine_table = NULL;
+
+/* sine lookup wavetable */
+static int *sine_table = NULL;
 
 /*------------------------------------------------------------------------*/
 
@@ -58,26 +57,82 @@ int varicode_table[NUM_VARICODE_CHARS] = VARICODE_ALPHABET;
   int
 Varicode_Bit( void )
 {
-  /* Carrier phase changes */
-  int phase_chg;
+  int
+	bit_idx,	/* Index to a bit in 3-bit sequence */
+	varicode_bit,
+	phase_chg;	/* Phase change from one PSK31 element to the next */
+
+  /* Ring buffer and its index, for storing
+   * 3 consecutive phase change values */
+  static int
+	ring_idx = 0,
+    ring_buffer[3];
 
 
-  /* Get phase PSK31 carrier phase change */
+  /* Get PSK31 phase change */
   phase_chg = PSK31_Phase();
 
-  /* If mode is BPSK, a phase change of */
-  /* 100-180 deg is considered reversal */
+  /* If mode is BPSK, use 3-bit sequence detector */
   if( isFlagSet(MODE_BPSK) )
   {
-	if( (abs(phase_chg) > 100) &&
-		(abs(phase_chg) < 260) )
-	  return(0);
-	else
-	  return(1);
+	int	diff,		/* To calculate the phase value for bits in 3-bit sequence */
+		bit_seq,	/* The bit sequence selected for having min phase ave */
+		seq_idx,	/* Index for giving a 3-bit seq 000-111 */
+		bit_cnt,	/* Count of number of bits tested in 3-bit sequence */
+		phase_sum,	/* Sum of phase changes for a 3-bit sequence */
+		phase_min;	/* Minimum value of phase change sum */
+
+	/* Absolute phase change for '0' is 90 to 270
+	 * and for '1' -90 to 90, so lines below */
+	phase_chg = abs( phase_chg );
+	if( phase_chg > 270 ) phase_chg -= 360;
+
+	/* Store phase change in ring buffer */
+	ring_buffer[ring_idx] = phase_chg;
+	if( ++ring_idx >= 3 ) ring_idx = 0;
+
+	/* For a '0' bit in the 3-bit sequence, 180 deg
+	 * is subtracted from the value in the ring buffer,
+	 * and for a '1' bit the value is not changed */
+	bit_seq = 0;
+	phase_min = 541; /* 3*180+1 */
+
+	/* Produce all combinations 000-111 of a 3-bit field */
+	for( seq_idx = 0; seq_idx < 8; seq_idx++ )
+	{
+	  bit_idx = 1;
+	  phase_sum = 0;
+
+	  /* For each combination, calculate phase change sum */
+	  for( bit_cnt = 0; bit_cnt < 3; bit_cnt++ )
+	  {
+		/* If bit is 0, subtract 180 from ring buffer */
+		diff  = (seq_idx & bit_idx)? 0 : -180;
+		diff += ring_buffer[ring_idx];
+		phase_sum += abs( diff );
+		bit_idx <<= 1;
+		if( ++ring_idx >= 3 ) ring_idx = 0;
+	  } /* for( bit_cnt = 0; bit_cnt < 3; bit_cnt++ ) */
+
+	  /* Find which 3-bit combination has the lowest
+	   * minimum phase sum. This is the 3-bit field
+	   * that is the nearest match to the incoming
+	   * sequence of phase change values */
+	  if( phase_min > phase_sum )
+	  {
+		bit_seq = seq_idx;
+		phase_min = phase_sum;
+	  }
+	} /* for( seq_idx = 0; seq_idx < 8; seq_idx++ ) */
+
+	/* The left most bit in the 3-bit
+	 * field is the last bit received */
+	varicode_bit = bit_seq >> 2;
   }
   else /* If in QPSK mode */
-	return( Viterbi_Decoder(phase_chg) );
+	varicode_bit = Viterbi_Decoder( phase_chg );
 
+  return( varicode_bit );
 } /* Varicode_Bit( void ) */
 
 /*------------------------------------------------------------------------*/
@@ -92,9 +147,8 @@ Varicode_Bit( void )
   int
 Decode_PSK_Character( void )
 {
-  int
-	varicode_bit, /* One bit of a Varicode character */
-	ascii_char;   /* New decoded ASCII character     */
+  /* One bit of a Varicode character */
+  int varicode_bit;
 
   /* Assembles varicode character */
   static int varicode = 0;
@@ -110,6 +164,8 @@ Decode_PSK_Character( void )
   /* Return char on two consecutive 0's (char space) */
   if( (varicode & 0x03) == 0 )
   {
+   /* New decoded ASCII character */
+	int ascii_char;
 	/* Dump trailing 0's of SPACE */
 	varicode >>= 2;
 
@@ -122,14 +178,12 @@ Decode_PSK_Character( void )
 	varicode = 0;
 
 	/* Change CR to LF, seems needed */
-	if( ascii_char == CR )
-	  ascii_char = LF;
-
+	if( ascii_char == CR ) ascii_char = LF;
 	return( ascii_char );
 
   } /* if( (varicode & 0x03) == 0 ) */
   else
-	return( NO_CHARACTER );
+	 return( NO_CHARACTER );
 
 } /* Decode_PSK_Character() */
 
@@ -145,66 +199,41 @@ Decode_PSK_Character( void )
   void
 Transmit_Preamble( void )
 {
-  /* Samples buffer. Size is 64 * (tone_duration / 2) */
-  /* as we have 64 samples/cycle, tone_duration is in */
-  /* msec, and each audio cycle is 2 msec (F=500 Hz), */
-  /* + 512 samples for the rising or falling edges.   */
-  /* In stereo mode the buffer size must be doubled   */
-  unsigned char
-	samples_buff[(32 * rc_data.tone_dur + 512) * num_chan];
-
   int
 	duration,   /* Tone duration in samples of audio */
 	buff_idx,   /* Index to audio samples buffer     */
-	buff_size,  /* Buffer size to be written to DSP  */
 	cosine_idx, /* Index to cosine wave lookup table */
 	idx;
 
-  /* sine and cosine lookup tables */
-  char  sine_table[64]  = SINE_WAVE_TABLE;
-  int cosine_table[512] = COSINE_WAVE_TABLE;
+  /*** Transmit a steady tone for rc_data.tone_dur sec ***/
+  duration = DSP_RATE * rc_data.tone_dur;
 
-  /*** Transmit a steady tone for rc_data.tone_dur msec ***/
-  /* Tone duration in samples */
-  duration  = 32 * rc_data.tone_dur;
-
-  /* Add number of edge samples (*2 for stereo) */
-  buff_size = (duration + 512) * num_chan;
-
-  /* Clean up buffer */
-  for( buff_idx = 0; buff_idx < buff_size; buff_idx++ )
-	samples_buff[buff_idx] = 128;
-
-  /* Initialize buffer according to stereo/mono mode */
-  if( num_chan == 2 )
-	buff_idx = chan_used;
-  else
-	buff_idx = 0;
+  /* Initialize buffer idx according to stereo/mono mode */
+  buff_idx = rc_data.use_chn;
 
   /* Fill buffer with cosine shaped rising edge */
   sine_idx = 0;
-  for( cosine_idx = 511; cosine_idx >= 0; cosine_idx-- )
+  for( cosine_idx = 0; cosine_idx < rc_data.psk_elem2; cosine_idx++ )
   {
-	samples_buff[buff_idx] = (cosine_table[cosine_idx] *
-		sine_table[sine_idx] / 65536) + 128;
-	buff_idx += num_chan;
+	xmit_buffer[buff_idx] = (short)
+	  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+	xmit_buffer[buff_idx] = sine_table[sine_idx];
+	buff_idx += rc_data.num_chn;
 
-	if( ++sine_idx == 64 )
-	  sine_idx = 0;
+	if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
   }
 
   /* Fill buffer with the steady tone samples */
   for( idx = 0; idx < duration; idx++ )
   {
-	samples_buff[buff_idx] = sine_table[sine_idx] + 128;
-	buff_idx += num_chan;
+	xmit_buffer[buff_idx] = (short)sine_table[sine_idx];
+	buff_idx += rc_data.num_chn;
 
-	if( ++sine_idx == 64 )
-	  sine_idx = 0;
+	if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
   }
 
-  /*** Write samples buffer to DSP ***/
-  DSP_Write( samples_buff, buff_size );
+  /*** Write buffer to DSP, abort on error ***/
+  DSP_Write( xmit_buffer, xmit_buf_size );
 
   /*** Transmit rc_data.num_rev reversals ***/
   for( idx = 0; idx < rc_data.num_rev; idx++ )
@@ -223,14 +252,6 @@ Transmit_Preamble( void )
   void
 Transmit_Postamble( void )
 {
-  /* Samples buffer. Size is 64 * (tone_duration / 2)  */
-  /* as we have 64 samples/cycle, tone_duration is in  */
-  /* msec, and each audio cycle is 2 msec (F = 500 Hz) */
-  /* + 512 samples for the rising 0r falling edges.    */
-  /* In stereo mode the buffer size must be doubled   */
-  unsigned char
-	samples_buff[(32 * rc_data.tone_dur + 512) * num_chan];
-
   int
 	duration,   /* Tone duration in samples of audio */
 	buff_idx,   /* Index to audio samples buffer     */
@@ -238,55 +259,42 @@ Transmit_Postamble( void )
 	cosine_idx, /* Index to cosine wave lookup table */
 	idx;
 
-  /* sine and cosine lookup tables */
-  char  sine_table[64]  = SINE_WAVE_TABLE;
-  int cosine_table[512] = COSINE_WAVE_TABLE;
-
 
   /*** Transmit rc_data.num_rev reversals ***/
   for( idx = 0; idx < rc_data.num_rev; idx++ )
 	Transmit_Element( PHASE_SHIFT_180 );
 
-  /*** Transmit a steady tone for rc_data.tone_dur msec ***/
+  /*** Transmit a steady tone for rc_data.tone_dur sec ***/
   /* Tone duration in samples */
-  duration  = 32 * rc_data.tone_dur;
+  duration = DSP_RATE * rc_data.tone_dur;
 
-  /* Add number of edge samples (*2 for stereo) */
-  buff_size = (duration + 512) * num_chan;
+  /* Add number of edge samples */
+  buff_size = duration + rc_data.psk_elem2;
 
-  /* Clean up buffer */
-  for( buff_idx = 0; buff_idx < buff_size; buff_idx++ )
-	samples_buff[buff_idx] = 128;
-
-  /* Initialize buffer according to stereo/mono mode */
-  if( num_chan == 2 )
-	buff_idx = chan_used;
-  else
-	buff_idx = 0;
+  /* Initialize buffer idx according to stereo/mono mode */
+  buff_idx = rc_data.use_chn;
 
   /* Fill buffer with the steady tone samples */
   for( idx = 0; idx < duration; idx++ )
   {
-	samples_buff[buff_idx] = sine_table[sine_idx] + 128;
-	buff_idx += num_chan;
+	xmit_buffer[buff_idx] = (short)sine_table[sine_idx];
+	buff_idx += rc_data.num_chn;
 
-	if( ++sine_idx == 64 )
-	  sine_idx = 0;
+	if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
   }
 
   /* Fill buffer with cosine shaped falling edge */
-  for( cosine_idx = 0; cosine_idx < 512; cosine_idx++ )
+  for( cosine_idx=rc_data.psk_elem2-1; cosine_idx>=0; cosine_idx-- )
   {
-	samples_buff[buff_idx] = (cosine_table[cosine_idx] *
-		sine_table[sine_idx] / 65536) + 128;
-	buff_idx += num_chan;
+	xmit_buffer[buff_idx] = (short)
+	  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+	buff_idx += rc_data.num_chn;
 
-	if( ++sine_idx == 64 )
-	  sine_idx = 0;
+	if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
   }
 
   /*** Write samples buffer to DSP ***/
-  DSP_Write( samples_buff, buff_size );
+  DSP_Write( xmit_buffer, buff_size );
 
 } /* Transmit_Postamble() */
 
@@ -294,33 +302,23 @@ Transmit_Postamble( void )
 
 /*  Transmit_Element()
  *
- *  Transmits a PSk31 element with the specified phase shift
+ *  Transmits a PSK31 element with the specified phase shift
  */
 
   void
 Transmit_Element( int phase_shift )
 {
-  static int
-	/* Number of audio samples per element */
-	num_samples = (4*DSP_SPEED)/125,
-	/* Period of audio signal in DSP samples */
-	audio_period = DSP_SPEED/AUDIO_FREQUENCY;
+  /* Number of audio samples per element */
+  int num_samples = ( 4 * DSP_RATE) / 125;
 
   int
 	buff_idx,   /* Index to audio samples buffer */
 	cosine_idx, /* Index to cosine lookup table  */
 	idx;
 
-  /* sine and cosine lookup tables */
-  char  sine_table[65]  = SINE_WAVE_TABLE;
-  int cosine_table[512] = COSINE_WAVE_TABLE;
 
-
-  /* Initialize buffer according to stereo/mono mode */
-  if( num_chan == 2 )
-	buff_idx = chan_used;
-  else
-	buff_idx = 0;
+  /* Initialize buffer idx according to stereo/mono mode */
+  buff_idx = rc_data.use_chn;
 
   /* Phase shift carrier as requested */
   switch( phase_shift )
@@ -330,11 +328,10 @@ Transmit_Element( int phase_shift )
 	  /* Fill buffer with the steady tone samples */
 	  for( idx = 0; idx < num_samples; idx++ )
 	  {
-		samples_buffer[buff_idx] = sine_table[sine_idx] + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)sine_table[sine_idx];
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  break;
@@ -342,98 +339,92 @@ Transmit_Element( int phase_shift )
 	case PHASE_SHIFT_180: /*** Send a phase reversal ***/
 
 	  /* Fill 1/2 buffer with cosine shaped falling edge */
-	  for( cosine_idx = 0; cosine_idx < 512; cosine_idx++ )
+	  for( cosine_idx = rc_data.psk_elem2-1; cosine_idx >= 0; cosine_idx-- )
 	  {
-		samples_buffer[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /* Reverse phase by moving sine index by 1/2 cycle */
-	  sine_idx += audio_period / 2;
-	  if( sine_idx >= 64 )
-		sine_idx -= audio_period;
+	  sine_idx += rc_data.tone_period / 2;
+	  if( sine_idx >= rc_data.tone_period )
+		sine_idx -= rc_data.tone_period;
 
 	  /* Fill rest of buffer with cosine shaped rising edge */
-	  for( cosine_idx = 511; cosine_idx >= 0; cosine_idx-- )
+	  for( cosine_idx=0; cosine_idx<rc_data.psk_elem2; cosine_idx++ )
 	  {
-		samples_buffer[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  break;
 
-	case PHASE_SHIFT_90: /*** Send a +90 degree phase shift */
+	case PHASE_SHIFT_90: /* Send a +90 degree phase shift */
 
 	  /* Fill 1/2 buffer with cosine shaped falling edge */
-	  for( cosine_idx = 0; cosine_idx < 512; cosine_idx++ )
+	  for( cosine_idx = rc_data.psk_elem2-1; cosine_idx >= 0; cosine_idx-- )
 	  {
-		samples_buffer[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /* Advance phase 90 deg by advancing sine index 1/4 cycle */
-	  sine_idx += audio_period / 4;
-	  if( sine_idx >= 64 )
-		sine_idx -= audio_period;
+	  sine_idx += rc_data.tone_period / 4;
+	  if( sine_idx >= rc_data.tone_period )
+		sine_idx -= rc_data.tone_period;
 
 	  /* Fill rest of buffer with cosine shaped rising edge */
-	  for( cosine_idx = 511; cosine_idx >= 0; cosine_idx-- )
+	  for( cosine_idx = 0; cosine_idx < rc_data.psk_elem2; cosine_idx++ )
 	  {
-		samples_buffer[buff_idx] = ( cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536 ) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  break;
 
-	case PHASE_SHIFT_270: /*** Send a -90 degree phase shift */
+	case PHASE_SHIFT_270: /* Send a -90 degree phase shift */
 
 	  /* Fill 1/2 buffer with cosine shaped falling edge */
-	  for( cosine_idx = 0; cosine_idx < 512; cosine_idx++ )
+	  for( cosine_idx = rc_data.psk_elem2-1; cosine_idx >= 0; cosine_idx-- )
 	  {
-		samples_buffer[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /* Retard phase 90 deg by retarding sine index 1/4 cycle */
-	  sine_idx -= audio_period / 4;
-	  if( sine_idx < 0 )
-		sine_idx += audio_period;
+	  sine_idx -= rc_data.tone_period / 4;
+	  if( sine_idx < 0 ) sine_idx += rc_data.tone_period;
 
 	  /* Fill rest of buffer with cosine shaped rising edge */
-	  for( cosine_idx = 511; cosine_idx >= 0; cosine_idx-- )
+	  for( cosine_idx = 0; cosine_idx < rc_data.psk_elem2-1; cosine_idx++ )
 	  {
-		samples_buffer[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
+		xmit_buffer[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
 
-		if( ++sine_idx == 64 )
-		  sine_idx = 0;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
   } /* switch( phase_shift ) */
 
-  /*** Write samples buffer to DSP ***/
-  DSP_Write( samples_buffer, buffer_size );
+  /* Write samples buffer to DSP */
+  /* Total num of samples is psk elem length */
+  DSP_Write( xmit_buffer, rc_data.psk_elem );
 
 } /* Transmit_Element() */
 
@@ -444,7 +435,6 @@ Transmit_PSK_Character( int ascii_chr )
 {
   int
 	varicode_chr, /* Varicode character in Hex   */
-	zero_cnt,     /* Count of consecutive zeroes */
 	phase_shift,  /* Required PSK31 phase shift  */
 	idx;
 
@@ -460,10 +450,7 @@ Transmit_PSK_Character( int ascii_chr )
   {
 	/* In BPSK, just transmit reversals */
 	if( isFlagSet(MODE_BPSK) )
-	{
 	  Transmit_Element( PHASE_SHIFT_180 );
-	  return;
-	}
 	else
 	{
 	  /* Flush shift register */
@@ -478,7 +465,8 @@ Transmit_PSK_Character( int ascii_chr )
 		phase_shift = conv_code[ shift_reg ];
 
 		/* Reverse odd phases for LSB */
-		if( (isFlagSet(MODE_QPSK_LSB)) && (phase_shift & 1) )
+		if( (isFlagSet(MODE_QPSK_LSB)) &&
+			(phase_shift & 1) )
 		  phase_shift = 4 - phase_shift;
 
 		Transmit_Element( phase_shift );
@@ -490,12 +478,16 @@ Transmit_PSK_Character( int ascii_chr )
   } /* if( ascii_chr == NULL_CHAR ) */
   else
   {
+	/* Count of consecutive zeroes */
+	int zero_cnt;
+
 	/* Convert ASCII to Varicode */
 	varicode_chr = varicode_table[ascii_chr];
 
 	/* Find beginning of varicode character */
 	/* including the trailing zeroes below  */
-	idx = 1; zero_cnt = 0;
+	idx = 1;
+	zero_cnt = 0;
 	while( zero_cnt < 2 )
 	{
 	  if( (varicode_chr & idx) == 0 )
@@ -546,7 +538,8 @@ Transmit_PSK_Character( int ascii_chr )
 		phase_shift = conv_code[ shift_reg ];
 
 		/* Reverse odd phases for LSB */
-		if( (isFlagSet(MODE_QPSK_LSB)) && (phase_shift & 1) )
+		if( (isFlagSet(MODE_QPSK_LSB)) &&
+			(phase_shift & 1) )
 		  phase_shift = 4 - phase_shift;
 
 		Transmit_Element( phase_shift );
@@ -569,7 +562,6 @@ trellis_state_t trellis[16];
 
 /* Convolutional code symbols */
 int symbols[32];
-
 
 /*  Viterbi_Decoder()
  *
@@ -604,8 +596,7 @@ Viterbi_Decoder( int phase_chg )
 	dists[idx] = trellis[idx/2].distance + Distance(phase_chg, symbols[idx]);
 
 	/* Keep track of the smallest distance */
-	if( dists[idx] < min_dist )
-	  min_dist = dists[idx];
+	if( dists[idx] < min_dist ) min_dist = dists[idx];
 
 	/* New bit sequence estimate */
 	ests[idx] = (trellis[idx/2].estimate << 1) + (idx & 1);
@@ -616,10 +607,8 @@ Viterbi_Decoder( int phase_chg )
   for( idx = 0; idx < 16; idx++ )
   {
 	/* Select lowest distance */
-	if( dists[idx] < dists[16 + idx] )
-	  select = 0;
-	else
-	  select = 16;
+	if( dists[idx] < dists[16 + idx] ) select = 0;
+	else select = 16;
 
 	/* Update excess distances */
 	trellis[idx].distance = dists[select + idx] - min_dist;
@@ -636,13 +625,10 @@ Viterbi_Decoder( int phase_chg )
 	  vote++;
 
   /* 'phase_chg' is used as a random number */
-  if( vote == 8 )
-	return( phase_chg & 1 );
-  else
-	return( vote < 8 );
+  if( vote == 8 ) return( phase_chg & 1 );
+  else return( vote < 8 );
 
 } /* Viterbi_Decoder() */
-
 
 /*------------------------------------------------------------------------*/
 
@@ -659,11 +645,9 @@ Distance( int A, int B)
   /* Shortest distance around the circumference */
   /* (phase circle) between two points A and B  */
   dist = abs(A - B);
-  if( dist > 180 )
-	dist = 360 - dist;
+  if( dist > 180 ) dist = 360 - dist;
 
   return( dist );
-
 } /* Distance() */
 
 /*------------------------------------------------------------------------*/
@@ -681,13 +665,11 @@ Parity( unsigned char data )
   count = 0;
   while( data > 0 )
   {
-	if( data & 1 )
-	  count++;
+	if( data & 1 ) count++;
 	data >>= 1;
   }
 
   return( count & 1 );
-
 } /* Parity() */
 
 /*------------------------------------------------------------------------*/
@@ -700,8 +682,9 @@ Parity( unsigned char data )
   void
 Init_Viterbi( void )
 {
-  int dprime[16] = { 450, 540, 270, 360, 360, 270, 360, 450,
-					 360, 270, 360, 270, 270, 180,  90,   0 };
+  int dprime[16] =
+  { 450, 540, 270, 360, 360, 270, 360, 450,
+	360, 270, 360, 270, 270, 180,  90,   0 };
   int idx;
 
   /* Generate the encode table */
@@ -718,7 +701,6 @@ Init_Viterbi( void )
 
 /*------------------------------------------------------------------------*/
 
-
 /*  Morse_Transmit()
  *
  *  Trasnsmits a character string in Morse code
@@ -728,12 +710,12 @@ Init_Viterbi( void )
 Morse_Transmit( char *mesg )
 {
   /* DSP samples buffer.
-   * Size is (samples/cycle)*(audio freq)*(dash duration)
+   * Size is (dsp speed)*(dash duration)
    * Dash duration is abt 3/wpm seconds.
    * In stereo mode the buffer size must be doubled
    */
-  unsigned char
-	samples_buff[3*num_chan*(SAMPLES_PER_CYCLE*AUDIO_FREQUENCY/rc_data.wpm)];
+  short
+	samples_buff[ 3 * rc_data.num_chn * DSP_RATE / rc_data.wpm];
 
   int
 	mesg_len,   /* String length of message to send  */
@@ -748,23 +730,20 @@ Morse_Transmit( char *mesg )
 	cosine_idx, /* Index to cosine wave lookup table */
 	idx;
 
-  /* sine and cosine lookup tables */
-  char  sine_table[] = SINE_WAVE_TABLE;
-  int cosine_table[] = COSINE_WAVE_TABLE;
-
   /* Tables of Morse and ascii characters */
   int
 	ascii_char[] = ASCII_CHAR,
 	morse_code[] = MORSE_CODE;
 
-  /* Duration in samples of Morse elem */
-  elem_dur = (SAMPLES_PER_CYCLE*AUDIO_FREQUENCY) / rc_data.wpm;
-  dash_dur = 3 * elem_dur;
-  buff_size = dash_dur * num_chan;
 
-  /* Clean up buffer */
-  for( buff_idx = 0; buff_idx < buff_size; buff_idx++ )
-	samples_buff[buff_idx] = 128;
+  /* Duration in samples of Morse elem */
+  elem_dur = DSP_RATE / rc_data.wpm;
+  dash_dur = 3 * elem_dur;
+
+  /* Clear buffer */
+  buff_size = dash_dur * rc_data.num_chn;
+  for( idx = 0; idx < buff_size; idx++ )
+	samples_buff[idx] = 0;
 
   /* Convert ascii characters to Morse hex code */
   mesg_len = strlen( mesg );
@@ -788,58 +767,49 @@ Morse_Transmit( char *mesg )
 	  /* If element is dot ('1') */
 	  if( morse_chr & (1 << morse_idx) )
 		/* Tone duration in samples - edges */
-		tone_dur = elem_dur - 2*COSINE_WAVE_TABLE_SIZE;
+		tone_dur = elem_dur - rc_data.psk_elem;
 	  else /* If element is dash ('0') */
 		/* Tone duration in samples is triple */
-		tone_dur = dash_dur - 2*COSINE_WAVE_TABLE_SIZE;
+		tone_dur = dash_dur - rc_data.psk_elem;
 
 	  /* Total samples to be generated */
-	  buff_size = (tone_dur + 2*COSINE_WAVE_TABLE_SIZE) * num_chan;
+	  buff_size = tone_dur + rc_data.psk_elem;
 
-	  /* Initialize buffer according to stereo/mono mode */
-	  if( num_chan == 2 )
-		buff_idx = chan_used;
-	  else
-		buff_idx = 0;
+	  /* Initialize buffer idx according to stereo/mono mode */
+	  buff_idx = rc_data.use_chn;
 
 	  /* Fill buffer with cosine shaped rising edge */
-	  sine_idx = 0;
-	  for( cosine_idx=COSINE_WAVE_TABLE_SIZE-1; cosine_idx>=0; cosine_idx-- )
+	  for( cosine_idx=0; cosine_idx<rc_data.psk_elem2; cosine_idx++ )
 	  {
-		samples_buff[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
-		if( ++sine_idx == SINE_WAVE_TABLE_SIZE )
-		  sine_idx = 0;
+		samples_buff[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /* Fill buffer with the steady tone samples */
 	  for( idx = 0; idx < tone_dur; idx++ )
 	  {
-		samples_buff[buff_idx] = sine_table[sine_idx] + 128;
-		buff_idx += num_chan;
-		if( ++sine_idx == SINE_WAVE_TABLE_SIZE )
-		  sine_idx = 0;
+		samples_buff[buff_idx] = (short)sine_table[sine_idx];
+		buff_idx += rc_data.num_chn;
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /* Fill buffer with cosine shaped falling edge */
-	  for( cosine_idx=0; cosine_idx<COSINE_WAVE_TABLE_SIZE; cosine_idx++ )
+	  for( cosine_idx=rc_data.psk_elem2-1; cosine_idx>=0; cosine_idx-- )
 	  {
-		samples_buff[buff_idx] = (cosine_table[cosine_idx] *
-			sine_table[sine_idx] / 65536) + 128;
-		buff_idx += num_chan;
-		if( ++sine_idx == SINE_WAVE_TABLE_SIZE )
-		  sine_idx = 0;
+		samples_buff[buff_idx] = (short)
+		  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
+		buff_idx += rc_data.num_chn;
+
+		if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
 	  }
 
 	  /*** Write samples buffer to DSP, abort on error ***/
 	  DSP_Write( samples_buff, buff_size );
 
-	  /* Initialize buffer according to stereo/mono mode */
-	  if( num_chan == 2 )
-		buff_idx = chan_used;
-	  else
-		buff_idx = 0;
+	  /* Initialize buffer idx according to stereo/mono mode */
+	  buff_idx = rc_data.use_chn;
 
 	  /* Fill buffer with 0 level for space */
 	  /* If inter-word space add 3 extra space elements*/
@@ -847,10 +817,10 @@ Morse_Transmit( char *mesg )
 	  {
 		for( idx = 0; idx < dash_dur; idx++ )
 		{
-		  samples_buff[buff_idx] = 128;
-		  buff_idx += num_chan;
+		  samples_buff[buff_idx] = 0;
+		  buff_idx += rc_data.num_chn;
 		}
-		buff_size = dash_dur * num_chan;
+		buff_size = dash_dur;
 
 		/*** Writebuffer to DSP, abort on error ***/
 		DSP_Write( samples_buff, buff_size );
@@ -860,31 +830,28 @@ Morse_Transmit( char *mesg )
 	  /* Add inter-element space */
 	  for( idx = 0; idx < elem_dur; idx++ )
 	  {
-		samples_buff[buff_idx] = 128;
-		buff_idx += num_chan;
+		samples_buff[buff_idx] = 0;
+		buff_idx += rc_data.num_chn;
 	  }
-	  buff_size = elem_dur * num_chan;
+	  buff_size = elem_dur;
 
 	  /*** Write buffer to DSP, abort on error ***/
 	  DSP_Write( samples_buff, buff_size );
+
 	  morse_idx--;
 
 	} /* while( morse_idx >= 0 ) */
 
 	/* Send inter-character space */
 	/* Initialize buffer according to stereo/mono mode */
-	if( num_chan == 2 )
-	  buff_idx = chan_used;
-	else
-	  buff_idx = 0;
+	buff_idx = rc_data.use_chn;
 
 	for( idx = 0; idx < 2 * elem_dur; idx++ )
 	{
-	  samples_buff[buff_idx] = 128;
-	  buff_idx += num_chan;
+	  samples_buff[buff_idx] = 0;
+	  buff_idx += rc_data.num_chn;
 	}
-
-	buff_size = 2 * elem_dur * num_chan;
+	buff_size = 2 * elem_dur;
 
 	/*** Write samples buffer to DSP ***/
 	DSP_Write( samples_buff, buff_size );
@@ -894,3 +861,56 @@ Morse_Transmit( char *mesg )
 } /* Morse_Transmit() */
 
 /*------------------------------------------------------------------------*/
+
+/* Make_Cosine_Table()
+ *
+ * Builds a raised cosine wavetable for tone generation
+ */
+  void
+Make_Cosine_Table( void )
+{
+  int idx;
+  double step = M_PI_2 / (double)rc_data.psk_elem2;
+
+  cosine_table = malloc( rc_data.psk_elem2 * sizeof(int) );
+  if( cosine_table == NULL )
+  {
+	fprintf( stderr, "lpsk31: memory allocation for cos table failed\n" );
+	exit( ERROR );
+  }
+
+  /* This makes a raised cosine table */
+  for( idx = 0; idx < rc_data.psk_elem2; idx++ )
+	cosine_table[idx] =
+	  (int)( 32767.0 * sin(step * (double)idx) );
+
+} /* Make_Cosine_Table() */
+
+/*------------------------------------------------------------------------*/
+
+/* Make_Sine_Table()
+ *
+ * Makes a sine wavetable for tone generator
+ */
+  void
+Make_Sine_Table( void )
+{
+  int idx;
+  double step = 2.0 * M_PI / (double)rc_data.tone_period;
+
+  sine_table = malloc( rc_data.tone_period * sizeof(int) );
+  if( sine_table == NULL )
+  {
+	fprintf( stderr, "lpsk31: memory allocation for sin table failed\n" );
+	exit( ERROR );
+  }
+
+  /* Make a sine wavetable for tone generator */
+  for( idx = 0; idx < rc_data.tone_period; idx++ )
+	sine_table[idx] =
+	  (int)( 32767.0 * sin(step * (double)idx) );
+
+} /* Make_Sine_Table() */
+
+/*------------------------------------------------------------------------*/
+

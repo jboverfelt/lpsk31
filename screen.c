@@ -7,7 +7,6 @@
  *  lpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2001  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -23,7 +22,7 @@
  */
 
 
-#include "lpsk31.h"
+#include "screen.h"
 
 /* QSO data record */
 extern qso_record_t qso_record;
@@ -38,10 +37,7 @@ extern FILE
   /* Pointer to samples file */
   *samples_fp;
 
-  /* DSP signal samples buffer */
-  extern int buffer_size;
-
-  extern char
+extern char
   label[9][19], /* Labels for F1-F9 commands */
   *macro[9];    /* Macros attached to F1-F9  */
 
@@ -59,9 +55,6 @@ extern op_data_t op_data;
 
 /* Operator and location data */
 extern qso_record_t qso_record;
-
-/* Signal/DSP samples buffer. 2x size for Stereo */
-extern unsigned char *samples_buffer;
 
 /* Command codes for FT847 CAT */
 extern unsigned char
@@ -222,7 +215,6 @@ Screen_Transmit_Window( void )
   Transmit_Preamble();
 
   /* Process keystrokes from user */
-  kbd_chr = -1;
   char_cnt = 0;
   while( 1 )
   {
@@ -341,7 +333,6 @@ Transmit_Macro( WINDOW *transmit_win )
 {
   int
 	macro_cnt, /* Count macro characters transmitted   */
-	char_cnt,  /* Count characters entered at keyboard */
 	idx;
 
   /* Tags for entering fields in macros */
@@ -476,7 +467,6 @@ Transmit_Macro( WINDOW *transmit_win )
 			tag_rep[idx] -= 0x20;
 
 		Transmit_Character( tag_rep[idx++], transmit_win );
-		char_cnt++;
 	  }
 
 	} /* if( macro[macro_idx][macro_cnt] == '<' ) */
@@ -497,7 +487,6 @@ Transmit_Macro( WINDOW *transmit_win )
 	/* Transmit a char from Macro */
 	Transmit_Character(macro[macro_idx][macro_cnt], transmit_win);
 	macro_cnt++;
-	char_cnt++;
 
   } /* while( macro[macro_idx][macro_cnt] != '\0' ) */
 
@@ -751,7 +740,7 @@ Screen_Receive_Window( void )
 		Clear_Flag( RECORD_SAVED );
 
 		/*** Process keystrokes from user in qso_form ***/
-		kbd_chr = done = 0;
+		done = 0;
 		while( !done )
 		{
 		  kbd_chr = getch();
@@ -1010,53 +999,6 @@ Screen_Receive_Window( void )
 		  mvaddstr( 22, 63, "Record QSO's" );
 		}
 		break;
-
-	  case 'f': case 'F': /* Read samples from file */
-		/* Open file for reading  samples */
-		if( samples_fp == NULL )
-		  samples_fp = fopen( "lpsk31.bin", "r" );
-		if( samples_fp == NULL )
-		{
-		  Cleanup();
-		  perror( "lpsk31.bin" );
-		  exit(-1);
-		}
-
-		Set_Flag( READ_FILE );
-		break;
-
-	  case 'w': case 'W': /* Toggle write samples to file */
-		if( samples_fp != NULL )
-		  fclose( samples_fp );
-		samples_fp = NULL;
-
-		if( isFlagClear(WRITE_FILE) )
-		{
-		  /* Open file for writing  samples */
-		  samples_fp = fopen( "lpsk31.bin", "w+" );
-		  if( samples_fp == NULL )
-		  {
-			Cleanup();
-			perror( "lpsk31.bin" );
-			exit(-1);
-		  }
-
-		  Set_Flag( WRITE_FILE );
-
-		} /* if( isFlagClear(WRITE_FILE) ) */
-		else
-		{
-		  if( samples_fp != NULL )
-			fclose( samples_fp );
-
-		  samples_fp = NULL;
-		  Clear_Flag( WRITE_FILE );
-		  break;
-		}
-		break;
-
-	  case 's': case 'S': /* Record signal (RX audio) to file */
-		Record_Signal();
 
 	} /* switch( kbd_chr ) */
 

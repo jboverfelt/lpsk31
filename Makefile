@@ -3,15 +3,21 @@
 SHELL   = /bin/sh
 PROJECT = lpsk31
 BINDIR  = /usr/local/bin
-DOCDIR  = /usr/local/share/
-CC      = gcc -Wall -O2 -march=native
+DOCDIR  = /usr/local/share/doc/
+CC      = gcc -Wall -march=native -O2 -D_FORTIFY_CODE=2
 
-objects = cat.o lpsk31.o phase.o pskcodec.o screen.o sound.o
+objects = cat.o main.o phase.o pskcodec.o screen.o sound.o
 
 $(PROJECT) : $(objects)
-	$(CC) -lform -lncurses -o $(PROJECT) $(objects)
+	$(CC) -lform -lncurses -lasound -lm -o $(PROJECT) $(objects)
 
-$(objects) : $(PROJECT).h
+$(objects) : common.h
+cat.o : cat.h
+main.o : main.h
+phase.o : phase.h
+pskcodec.o : pskcodec.h
+screen.o : screen.h
+sound.o : sound.h
 
 install : $(PROJECT)
 	install -m 755 --strip $(PROJECT) $(BINDIR)

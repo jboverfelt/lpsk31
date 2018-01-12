@@ -7,7 +7,6 @@
  *  lpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2002  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -22,26 +21,15 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-#include "lpsk31.h"
+#include "main.h"
 
 FILE
-  /* Pointer to samples file  */
-  *samples_fp = NULL,
   /* File for recording QSO's */
   *qso_record_fp = NULL,
   /* File for ADIF QSO record */
   *log_adif_fp = NULL,
   /* File for staion QSO log  */
   *log_fp = NULL;
-
-  int
-  num_chan,    /* Stereo(=2) or Mono(=1) selection */
-  chan_used,   /* Channel in use: left=0, right=1; */
-  buffer_size, /* DSP signal samples buffer        */
-  buffer_idx;  /* Index to signal samples buffer   */
-
-/* Signal samples buffer */
-unsigned char *samples_buffer;
 
 char
   label[9][19], /* Labels for F1-F9 commands */
@@ -64,10 +52,6 @@ main( int argc, char *argv[] )
   /* Command line option returned by getopt() */
   int option;
 
-  /* getopt() variables */
-  extern char *optarg;
-  extern int optind, opterr, optopt;
-
   /* New and old actions for sigaction() */
   struct sigaction sa_new, sa_old;
 
@@ -83,38 +67,6 @@ main( int argc, char *argv[] )
   sigaction( SIGFPE,  &sa_new, 0 );
   sigaction( SIGTERM, &sa_new, 0 );
   sigaction( SIGABRT, &sa_new, 0 );
-
-  /* Load runtime config file, abort on error */
-  Load_Config();
-
-  /*** Do the global config variables ***/
-  /* Set stereo or mono mode
-  if( strcmp(rc_data.mode, "STEREO") == 0 )
-	num_chan = 2;
-  else
-	if( strcmp(rc_data.mode, "MONO") == 0 )
-	  num_chan = 1;
-	else
-	  Abort_On_Error( -12 ); */
-
-  /* Channel in use left or right
-  if( strcmp(rc_data.channel, "RIGHT") == 0 )
-	chan_used = 1;
-  else
-	if( strcmp(rc_data.channel, "LEFT") == 0 )
-	  chan_used = 0;
-	else
-	  Abort_On_Error( -12 ); */
-
-  /* Size of samples buffer depends on stereo/mono mode */
-  buffer_size = BUFFER_SIZE * num_chan,
-  /* Index to signal samples buffer */
-  buffer_idx  = BUFFER_SIZE * num_chan;
-
-  /* Allocate memory to samples buffer */
-  samples_buffer = malloc( buffer_size );
-  if( samples_buffer == NULL )
-	Abort_On_Error( -13 );
 
   /*** Process command line options ***/
   while( (option = getopt(argc, argv, "hv") ) != -1 )
@@ -134,6 +86,12 @@ main( int argc, char *argv[] )
 		exit( -1 );
 
 	} /* End of switch( option ) */
+
+  /* Load runtime config file, aborts on error */
+  Load_Config();
+
+  /* Prepare sound card, aborts on error */
+  Setup_Sound_Card();
 
   /* Initialize ncurses */
   initscr();
@@ -163,10 +121,6 @@ main( int argc, char *argv[] )
 	init_pair( COLOR_WHITE_YELLOW, COLOR_WHITE,   COLOR_YELLOW );
 	init_pair( COLOR_WHITE_GREEN,  COLOR_WHITE,   COLOR_GREEN  );
   }
-
-  /* Prepare sound card */
-  if(isFlagClear(READ_FILE) )
-	Setup_Sound_Card();
 
   /* Go to ncurses interface until user quits */
   Screen_Root();
@@ -219,57 +173,60 @@ Load_Config( void )
 
   /*** Read runtime configuration data ***/
 
-  /* Read mixer dev, abort if EOF */
+  /* Read ALSA sound card name, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.mixer, line, 14 );
-  rc_data.mixer[14] = '\0';
+  strncpy( rc_data.snd_card, line, 31 );
+  rc_data.snd_card[31] = '\0';
 
-  /* Read input DSP dev, abort if EOF */
+  /* Read Capture source, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.dsp_in, line, 14 );
-  rc_data.dsp_in[14] = '\0';
+  strncpy( rc_data.cap_src, line, 31 );
+  rc_data.cap_src[31] = '\0';
 
-  /* Read output DSP dev, abort if EOF */
+  /* Read Capture volume element, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.dsp_out, line, 14 );
-  rc_data.dsp_out[14] = '\0';
+  strncpy( rc_data.cap_vol, line, 31 );
+  rc_data.cap_vol[31] = '\0';
 
-  /* Read recording source, abort if EOF */
+  /* Read Master volume element, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.rec_src, line, 9 );
-  rc_data.rec_src[9] = '\0';
+  strncpy( rc_data.mst_vol, line, 31 );
+  rc_data.mst_vol[31] = '\0';
 
-  /* Read recording level device, abort if EOF */
+  /* Read PCM volume element, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.lev_dev, line, 9 );
-  rc_data.lev_dev[9] = '\0';
+  strncpy( rc_data.pcm_vol, line, 31 );
+  rc_data.pcm_vol[31] = '\0';
 
-  /* Read Recording level, abort if EOF */
+  /* Read Capture level, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  rc_data.rec_lev = atoi( line );
+  rc_data.cap_lev = atoi( line );
 
-  /* Read Volume level, abort if EOF */
+  /* Read Playback level, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  rc_data.vol_lev = atoi( line );
+  rc_data.pbk_lev = atoi( line );
 
-  /* Read mode, abort if EOF */
+  /* Read ALSA channel used, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.mode, line, 6 );
-  rc_data.mode[6] = '\0';
+  rc_data.channel = atoi( line );
 
-  /* Read channel used, abort if EOF */
+  /* Read number of channels (stereo/mono), abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
 	Abort_On_Error( -12 );
-  strncpy( rc_data.channel, line, 5 );
-  rc_data.channel[5] = '\0';
+  rc_data.num_chn = atoi( line );
+
+  /* Read channel used (left/right), abort if EOF */
+  if( Load_Line(line, lpsk31rc) == EOF )
+	Abort_On_Error( -12 );
+  rc_data.use_chn = atoi( line );
 
   /* Read squelch threshold, abort if EOF */
   if( Load_Line(line, lpsk31rc) == EOF )
@@ -364,7 +321,13 @@ Load_Config( void )
 
 		/* Allocate memory to macro buffer */
 		ln_len = strlen( line );
-		macro[lb_idx] = realloc(macro[lb_idx], ln_len + mc_idx + 2);
+		macro[lb_idx] = (char *)realloc(macro[lb_idx], ln_len + mc_idx + 2);
+		if( macro[lb_idx] == NULL )
+		{
+		  perror( "lpsk31" );
+		  fprintf( stderr, "lpsk31: memory re-allocation failed - aborting\n" );
+		  exit( -1 );
+		}
 
 		/* Concatenate lines to macro */
 		for( ln_idx = 0; ln_idx < ln_len; ln_idx++ )
@@ -388,6 +351,17 @@ Load_Config( void )
 		Abort_On_Error( -12 );
 
 	} /* for( lb_idx = 0; lb_idx < NUM_OF_LABELS; lb_idx++ ) */
+
+  /* Duration of half of a PSK pulse, in DSP samples */
+  rc_data.psk_elem  = (int)( (double)DSP_RATE / BAUD_RATE );
+  rc_data.psk_elem2 = rc_data.psk_elem/2;
+
+  /* Duration of preamble tone in dsp samples */
+  rc_data.tone_period = DSP_RATE / AUDIO_FREQUENCY;
+
+  /* Make cosine & sine wave table */
+  Make_Cosine_Table();
+  Make_Sine_Table();
 
   fclose( lpsk31rc );
 
@@ -516,8 +490,6 @@ Cleanup( void )
 	fclose( log_adif_fp );
   if( log_fp != NULL )
 	fclose( log_fp );
-  if( samples_fp != NULL )
-	fclose( samples_fp );
 
 }/*  Cleanup( void ) */
 

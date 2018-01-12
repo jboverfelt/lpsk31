@@ -7,7 +7,6 @@
  *  lpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2002  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -22,28 +21,33 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-#include "lpsk31.h"
+#include "sound.h"
 
-int
-  dsp_out_fd, /* File descriptor of output DSP device */
-  dsp_in_fd,  /* File descriptor of input DSP device  */
-  mix_fd;     /* File descriptor of mixer device      */
-
-extern int
-  num_chan,    /* Stereo(=2) or Mono(=1) selection */
-  chan_used,   /* Channel in use: left=0, right=1  */
-  buffer_size, /* DSP signal samples buffer        */
-  buffer_idx;  /* Index to signal samples buffer   */
-
-/* Signal/DSP samples buffer. Double size for Stereo */
-extern unsigned char *samples_buffer;
-
+/* Runtime config data */
 extern rc_data_t rc_data;
 
-/* Pointer to samples file */
-extern FILE *samples_fp;
+/* ALSA pcm capture and mixer handles */
+static snd_pcm_t *capture_handle  = NULL;
+static snd_pcm_t *playback_handle = NULL;
+static snd_mixer_t *mixer_handle  = NULL;
+static snd_pcm_hw_params_t *hw_params = NULL;
 
-/*------------------------------------------------------------------------*/
+/* Simple mixer elements for setting up
+ * capture amd playback sources and volume */
+static snd_mixer_elem_t *cap_elem = NULL;
+static snd_mixer_elem_t *pcm_elem = NULL;
+static snd_mixer_elem_t *mst_elem = NULL;
+
+int
+  xmit_buf_size,/* Xmit DSP signal samples buffer   */
+  recv_buf_size,/* Recv DSP signal samples buffer   */
+  recv_buf_idx;	/* Index to Rx signal samples buffer*/
+
+/* Signal samples buffers */
+short *xmit_buffer = NULL;
+short *recv_buffer = NULL;
+
+/*--------------------------------------------------------------------*/
 
 /*  Setup_Sound_Card()
  *
@@ -53,312 +57,533 @@ extern FILE *samples_fp;
   void
 Setup_Sound_Card( void )
 {
-  int
-	rec_src,    /* New recording source (RECORD_SRC) */
-	level,      /* Rec/Volume level request to mixer */
-	itmp;
+  /* Open PCM for capture. (Aborts on error) */
+  Open_Capture();  
 
-  /* Mixer device to be set-up (input or reclev) */
-  unsigned int device;
+  /* Open PCM for playback. (Aborts on error) */
+  Open_Playback();  
 
-  /* Sound device names from souncard.h */
-  char *dev_name[SOUND_MIXER_NRDEVICES] = SOUND_DEVICE_NAMES;
-
-  /* File lock information */
-  struct flock lockinfo;
-
-
-  /*** Open and lock mixer device ***/
-  /* Open mixer device, abort on error */
-  if( (mix_fd = open(rc_data.mixer, O_RDWR, 0)) == -1 )
-  {
-	Cleanup();
-	perror( rc_data.mixer );
-	exit( -1 );
-  }
-
-  /* Attempt to lock entire mixer device file */
-  lockinfo.l_type   = F_WRLCK;
-  lockinfo.l_whence = SEEK_SET;
-  lockinfo.l_start  = 0;
-  lockinfo.l_len    = 0;
-  lockinfo.l_pid    = 0;
-
-  /* If mixer device is already locked, abort */
-  if( fcntl( mix_fd, F_SETLK, &lockinfo ) < 0 )
-  {
-	Cleanup();
-	perror( rc_data.mixer );
-	fcntl( mix_fd, F_GETLK, &lockinfo );
-	fprintf( stderr, "lpsk31: Lock %s: Device locked by pid %d - aborting\n",
-		rc_data.mixer, lockinfo.l_pid );
-	exit( -1 );
-  }
-
-  /*** Setup sound card parameters ***/
-  /* Find number of recording source matching source name */
-  for( rec_src = 0; rec_src < SOUND_MIXER_NRDEVICES; rec_src++ )
-	if( strcmp( dev_name[rec_src], rc_data.rec_src ) == 0 )
-	  break;
-
-  if( rec_src ==  SOUND_MIXER_NRDEVICES )
-	Abort_On_Error( -2 );
-
-  /* Make recording source mask */
-  itmp = 1 << rec_src;
-
-  /* Attempt to select recording source, abort on error */
-  if( ioctl(mix_fd, SOUND_MIXER_WRITE_RECSRC, &itmp) == -1 )
-  {
-	Cleanup();
-	perror("lpsk31: SOUND_MIXER_WRITE_RECSRC");
-	exit( -1 );
-  }
-  if( itmp != 1 << rec_src )
-	Abort_On_Error( -2 );
-
-  /* Zero level of recording source to silence (my) speakers */
-  level = itmp = 0;
-  if( ioctl(mix_fd, SOUND_MIXER_WRITE_LINE, &level) == -1 )
-  {
-	perror("lpsk31: Setting Recording Source level");
-	exit( -1 );
-  }
-  if( level != itmp )
-	Abort_On_Error( -8 );
-
-  /* Find recording level device */
-  for( device = 0; device < SOUND_MIXER_NRDEVICES; device++ )
-	if( strcmp( dev_name[device], rc_data.lev_dev ) == 0 )
-	  break;
-
-  if( device ==  SOUND_MIXER_NRDEVICES )
-	Abort_On_Error( -7 );
-
-  /* Write recording level to mixer, abort on error */
-  level = itmp = rc_data.rec_lev | (rc_data.rec_lev << 8);
-  if( ioctl(mix_fd, SOUND_MIXER_WRITE_IGAIN, &level) == -1 )
-  {
-	Cleanup();
-	perror("lpsk31: Setting Recording level");
-	exit( -1 );
-  }
-  if( level != itmp )
-	Abort_On_Error( -5 );
-
-  /* Write level to Volume, abort on error */
-  level = itmp = rc_data.vol_lev | (rc_data.vol_lev << 8);
-  if( ioctl(mix_fd, SOUND_MIXER_WRITE_VOLUME, &level) == -1 )
-  {
-	Cleanup();
-	perror("lpsk31: Setting Volume level");
-	exit( -1 );
-  }
-  if( level != itmp )
-	Abort_On_Error( -15 );
-
-  /* Write level to PCM, abort on error */
-  level = itmp = rc_data.vol_lev | (rc_data.vol_lev << 8);
-  if( ioctl(mix_fd, SOUND_MIXER_WRITE_PCM, &level) == -1 )
-  {
-	Cleanup();
-	perror("lpsk31: Setting PCM level");
-	exit( -1 );
-  }
-  if( level != itmp )
-	Abort_On_Error( -15 );
-
-  /*** Open and setup dsp device(s) ***/
-  /* If only one device specified, open input dsp r/w */
-  if( strcmp(rc_data.dsp_in, rc_data.dsp_out) == 0 )
-  {
-	Setup_Dsp_Dev(rc_data.dsp_in, O_RDWR, &dsp_in_fd);
-	dsp_out_fd = dsp_in_fd;
-  }
-  else /* Setup separate dsp in/out */
-  {
-	Setup_Dsp_Dev(rc_data.dsp_in,  O_RDONLY, &dsp_in_fd );
-	Setup_Dsp_Dev(rc_data.dsp_out, O_WRONLY, &dsp_out_fd);
-  }
+  /* Open Mixer. (Aborts on error) */
+  Open_Mixer();  
 
 } /* End of Setup_Sound_Card() */
 
-/*------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------*/
 
-/*  Setup_Dsp_Dev()
+/* Open_PCM()
  *
- *  Sets up a given dsp device
+ * Opens a pcm device for a given handle
  */
-
-  void
-Setup_Dsp_Dev( char *dsp_dev, int mode, int *dsp_fd )
+void
+Open_PCM(
+	snd_pcm_t **handle,
+	snd_pcm_stream_t stream )
 {
-  int
-	dsp_speed,   /* DSP sampling speed as in lpsk31.h */
-	frag_size,   /* DSP buffer (fragment) size in kb  */
-	sample_fmt,  /* DSP sample format, 8-bit unsigned */
-	itmp;
+  int error;
 
-  /* File lock information   */
-  struct flock lockinfo;
-
-
-  /* Open input DSP device, abort on error */
-  if( (*dsp_fd = open(dsp_dev, mode, 0)) == -1 )
+  /* Open pcm */
+  error = snd_pcm_open(
+	  handle, rc_data.snd_card, stream, PCM_BLOCK );
+  if( error < 0 )
   {
-	Cleanup();
-	perror( dsp_dev );
-	fprintf( stderr, "lpsk31: Unable to open %s", dsp_dev);
-	exit(-1);
+	fprintf( stderr, "lpsk31: cannot open sound device %s\n", rc_data.snd_card );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
   }
 
-  /* Attempt to lock entire DSP device file */
-  if( mode == O_RDONLY )
+  /* Allocate memory to hardware parameters structure */
+  error = snd_pcm_hw_params_malloc( &hw_params );
+  if( error < 0 )
   {
-	lockinfo.l_type   = F_RDLCK;
-	lockinfo.l_whence = SEEK_SET;
-	lockinfo.l_start  = 0;
-	lockinfo.l_len    = 0;
+	fprintf( stderr, "lpsk31: cannot allocate hw_params struct\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Initialize hardware parameter structure */
+  error = snd_pcm_hw_params_any( *handle, hw_params );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot initialize hw_params struct\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set access type */
+  error = snd_pcm_hw_params_set_access(
+	  *handle, hw_params, SND_PCM_ACCESS );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot set PCM access type\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set sample format */
+  error = snd_pcm_hw_params_set_format(
+	  *handle, hw_params, SND_PCM_FORMAT );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot set sample format\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set sample rate */
+  error = snd_pcm_hw_params_set_rate(
+	  *handle, hw_params, DSP_RATE, EXACT_VAL );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot set sample rate to %d\n", DSP_RATE );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set channel count */
+  error = snd_pcm_hw_params_set_channels(
+	  *handle, hw_params, rc_data.num_chn );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot set channel count to %d\n", rc_data.num_chn );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set number of periods */
+  error = snd_pcm_hw_params_set_periods(
+	  *handle, hw_params, NUM_PERIODS, EXACT_VAL );
+  if( error < 0)
+  {
+	fprintf( stderr, "lpsk31: cannot set number of periods\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set period size */
+  error = snd_pcm_hw_params_set_period_size(
+	  *handle, hw_params, PERIOD_SIZE, EXACT_VAL );
+  if( error < 0)
+  {
+	fprintf( stderr, "lpsk31: cannot set period size\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Set parameters */
+  error = snd_pcm_hw_params( *handle, hw_params );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot set capture parameters\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+  snd_pcm_hw_params_free( hw_params );
+  hw_params = NULL;
+
+  /* Prepare audio interface for use */
+  error = snd_pcm_prepare( *handle );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot prepare audio interface\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  return;
+} /* Open_PCM() */
+
+/*----------------------------------------------------------------*/
+
+/* Open_Capture()
+ *
+ * Opens sound card for Capture
+ */
+  void
+Open_Capture( void )
+{
+  /* Open & setup pcm for Capture */
+  Open_PCM( &capture_handle, SND_PCM_STREAM_CAPTURE) ;
+
+  /* Size of receive samples buffer in 'shorts' */
+  recv_buf_size = PERIOD_SIZE * rc_data.num_chn;
+
+  /* Index to recv samples buffer (set to end) */
+  recv_buf_idx = recv_buf_size;
+
+  /* Allocate memory to receive samples buffer */
+  if( recv_buffer == NULL )
+	recv_buffer = malloc( (size_t)recv_buf_size * sizeof(short) );
+  if( recv_buffer == NULL )
+  {
+	fprintf( stderr, "lpsk31: receive buffer memory allocation failed\n" );
+	exit( ERROR );
+  }
+  memset( recv_buffer, 0, (size_t)recv_buf_size * sizeof(short) );
+
+  /* Set Capture volume. Failure to set
+   * volume level is not considered fatal */
+  Set_Capture_Level( rc_data.cap_lev );
+
+  return;
+} /* Open_Capture() */
+
+/*----------------------------------------------------------------*/
+
+/* Open_Playback()
+ *
+ * Opens sound card for Playback
+ */
+  void
+Open_Playback( void )
+{
+  /* Open & setup pcm for Playback */
+  Open_PCM(	&playback_handle, SND_PCM_STREAM_PLAYBACK );
+
+  /* Set Playback volume. Failure to set
+   * volume level is not considered fatal */
+  Set_Playback_Level( rc_data.pbk_lev );
+
+  /* Size of transmit samples buffer in frames */
+  if( rc_data.tone_dur > 0 )
+	xmit_buf_size =
+	  (DSP_RATE * rc_data.tone_dur + rc_data.psk_elem2);
+  else
+	xmit_buf_size = rc_data.psk_elem;
+
+  /* Allocate memory to transmit samples buffer */
+  if( xmit_buffer == NULL )
+	xmit_buffer = malloc(
+		rc_data.num_chn * xmit_buf_size * sizeof(short) );
+  if( xmit_buffer == NULL )
+  {
+	fprintf( stderr, "lpsk31: memory allocation for xmit buffer failed\n" );
+	exit( ERROR );
+  }
+  memset( xmit_buffer, 0,
+	  (size_t)xmit_buf_size * sizeof(short) );
+
+  return;
+} /* Open_Playback() */
+
+/*----------------------------------------------------------------*/
+
+/* Open_Mixer()
+ *
+ * Opens mixer interface
+ */
+  void
+Open_Mixer( void )
+{
+  snd_mixer_elem_t *elem;
+  snd_mixer_selem_id_t *sid;
+  int error;
+
+  /* Open mixer handle */
+  error = snd_mixer_open( &mixer_handle, 0 );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot open mixer handle\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Attach mixer */
+  error = snd_mixer_attach( mixer_handle, rc_data.snd_card );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot attach mixer to %s\n", rc_data.snd_card );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Register mixer */
+  error = snd_mixer_selem_register( mixer_handle, NULL, NULL );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot register mixer\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Load mixer */
+  error = snd_mixer_load( mixer_handle );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot load mixer\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Allocate selem_id structure */
+  error = snd_mixer_selem_id_malloc( &sid );
+  if( error < 0 )
+  {
+	fprintf( stderr, "lpsk31: cannot allocate selem_id struct\n" );
+	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
+  }
+
+  /* Find capture source selem */
+  snd_mixer_selem_id_set_index( sid, 0 );
+  snd_mixer_selem_id_set_name( sid, rc_data.cap_src );
+  elem = snd_mixer_find_selem( mixer_handle, sid );
+  if( !elem )
+  {
+	fprintf( stderr,
+		"lpsk31: cannot find capture source element %s\n",	rc_data.cap_src );
+	snd_mixer_selem_id_free(sid);
+	exit( ERROR );
+  }
+
+  /* Set capture switch for capture source */
+  if( snd_mixer_selem_has_capture_switch(elem) )
+  {
+	error = snd_mixer_selem_set_capture_switch(
+		elem, rc_data.channel, 1 );
+	if( error < 0 )
+	{
+	  fprintf( stderr,
+		  "lpsk31: cannot set capture source to %s\n", rc_data.cap_src );
+	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	  snd_mixer_selem_id_free(sid);
+	  exit( ERROR );
+	}
   }
   else
-	if( mode == O_WRONLY )
+  {
+	fprintf( stderr,
+		"lpsk31: device %s does not have Capture capability\n", rc_data.cap_src );
+	exit( ERROR );
+  }
+
+  /* Find capture volume selem if not -- */
+  if( strcmp(rc_data.cap_vol, "--") != 0 )
+  {
+	snd_mixer_selem_id_set_index( sid, 0 );
+	snd_mixer_selem_id_set_name( sid, rc_data.cap_vol );
+	cap_elem = snd_mixer_find_selem( mixer_handle, sid );
+	if( !cap_elem )
 	{
-	  lockinfo.l_type   = F_WRLCK;
-	  lockinfo.l_whence = SEEK_SET;
-	  lockinfo.l_start  = 0;
-	  lockinfo.l_len    = 0;
+	  fprintf( stderr,
+		  "lpsk31: cannot find Capture volume element %s\n", rc_data.cap_vol  );
+	  fprintf( stderr, "lpsk31: Capture volume not set\n" );
 	}
-	else
+  }
+
+  /* Find Master playback volume selem if not -- */
+  if( strcmp(rc_data.mst_vol, "--") != 0 )
+  {
+	snd_mixer_selem_id_set_index( sid, 0 );
+	snd_mixer_selem_id_set_name( sid, rc_data.mst_vol );
+	mst_elem = snd_mixer_find_selem( mixer_handle, sid );
+	if( !mst_elem )
 	{
-	  lockinfo.l_type   = F_RDLCK | F_WRLCK;
-	  lockinfo.l_whence = SEEK_SET;
-	  lockinfo.l_start  = 0;
-	  lockinfo.l_len    = 0;
+	  fprintf( stderr,
+		  "lpsk31: cannot find Playback volume element %s\n", rc_data.mst_vol );
+	  fprintf( stderr, "lpsk31: Playback volume not set\n" );
 	}
-
-
-  /* If DSP device is already locked, abort */
-  if( fcntl( *dsp_fd, F_SETLK, &lockinfo ) < 0 )
-  {
-	Cleanup();
-	perror( dsp_dev );
-	fcntl( *dsp_fd, F_GETLK, &lockinfo );
-	fprintf( stderr, "lpsk31: Lock %s: Device is locked by pid %d",
-		dsp_dev, lockinfo.l_pid );
-	exit(-1);
   }
 
-  /* Set fragment size according to stereo/mono mode */
-  itmp = 1; frag_size = 0;
-  while( (itmp << frag_size) != BUFFER_SIZE ) frag_size++;
-  itmp += num_chan << 18;
-  ioctl( *dsp_fd, SNDCTL_DSP_SETFRAGMENT, &frag_size );
-
-  /* Set sample format to unsigned 8-bit, abort on error */
-  sample_fmt = AFMT_U8;
-  if( ioctl(*dsp_fd, SNDCTL_DSP_SETFMT, &sample_fmt) == -1 )
+  /* Find PCM playback volume selem if not -- */
+  if( strcmp(rc_data.pcm_vol, "--") != 0 )
   {
-	Cleanup();
-	perror( "lpsk31: SNDCTL_DSP_SETFMT");
-	exit(-1);
+	snd_mixer_selem_id_set_index( sid, 0 );
+	snd_mixer_selem_id_set_name( sid, rc_data.pcm_vol );
+	pcm_elem = snd_mixer_find_selem( mixer_handle, sid );
+	if( !pcm_elem )
+	{
+	  fprintf( stderr,
+		  "lpsk31: cannot find Playback volume element %s\n", rc_data.pcm_vol );
+	  fprintf( stderr, "lpsk31: Playback volume not set\n" );
+	}
+	//FIXME set volume
+
+	/* Set PCM playback switch for playback source */
+	if( pcm_elem && snd_mixer_selem_has_playback_switch(elem) )
+	{
+	  error = snd_mixer_selem_set_playback_switch(
+		  pcm_elem, rc_data.channel, 1 );
+	  if( error < 0 )
+	  {
+		fprintf( stderr,
+			"lpsk31: cannot set playback channel %d\n", rc_data.channel );
+		fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+		exit( ERROR );
+	  }
+	}
   }
-  if( sample_fmt != AFMT_U8 )
+  snd_mixer_selem_id_free(sid);
+
+  return;
+} /* Open_Mixer() */
+
+/*----------------------------------------------------------------*/
+
+/* Set_Playback_Level()
+ *
+ * Sets Playback Control level
+ */
+  void
+Set_Playback_Level( int level )
+{
+  long cmin, cmax;
+  int error;
+
+  /* Set PCM playback volume */
+  if( pcm_elem && snd_mixer_selem_has_playback_volume(pcm_elem) )
   {
-	Cleanup();
-	fprintf( stderr, "Failed to set dsp sample format: AFMT_U8" );
-	exit(-1);
+	/* Change from % volume to sound card value */
+	long lev;
+	snd_mixer_selem_get_playback_volume_range( pcm_elem, &cmin, &cmax );
+	lev = cmin + ((cmax - cmin) * level) / 100;
+
+	/* Set PCM playback volume */
+	error = snd_mixer_selem_set_playback_volume(
+		pcm_elem, rc_data.channel, lev );
+	if( error < 0 )
+	{
+	  fprintf( stderr,
+		  "lpsk31: cannot set PCM Playback volume to %d\n", level );
+	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	}
   }
 
-  /* Set stereo/mono mode */
-  itmp = num_chan;
-  if( ioctl(*dsp_fd, SNDCTL_DSP_CHANNELS, &itmp) == -1 )
-	perror("lpsk31: SNDCTL_DSP_CHANNELS");
-
-  /* Setup DSP sampling speed, abort on error */
-  dsp_speed = DSP_SPEED;
-  if( ioctl(*dsp_fd, SNDCTL_DSP_SPEED, &dsp_speed) == -1 )
+  /* Set Master playback volume */
+  if( mst_elem && snd_mixer_selem_has_playback_volume(mst_elem) )
   {
-	Cleanup();
-	perror( "lpsk31: SNDCTL_DSP_SPEED");
-	exit(-1);
+	/* Change from % volume to sound card value */
+	long lev;
+	snd_mixer_selem_get_playback_volume_range(
+		mst_elem, &cmin, &cmax );
+	lev  = cmin + ((cmax - cmin) * level) / 100;
+
+	/* Set playback volume */
+	error = snd_mixer_selem_set_playback_volume(
+		mst_elem, rc_data.channel, lev );
+	if( error < 0 )
+	{
+	  fprintf( stderr,
+		  "lpsk31: cannot set Master Playback volume to %d\n", level );
+	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	}
   }
-  if( dsp_speed != DSP_SPEED )
+
+  return;
+} /* Set_Playback_Level() */
+
+/*----------------------------------------------------------------*/
+
+/* Set_Capture_Level()
+ *
+ * Sets Capture Control level
+ */
+  void
+Set_Capture_Level( int level )
+{
+  long cmin, cmax;
+
+  /* Set capture volume */
+  if( cap_elem && snd_mixer_selem_has_capture_volume(cap_elem) )
   {
-	Cleanup();
-	fprintf( stderr, "Failed to set DSP speed to %d.", DSP_SPEED );
-	exit(-1);
+	/* Change from % volume to sound card value */
+	long lev;
+	snd_mixer_selem_get_capture_volume_range(
+		cap_elem, &cmin, &cmax );
+	lev = cmin + ((cmax - cmin) * level) / 100;
+
+	/* Set capture volume */
+	int error = snd_mixer_selem_set_capture_volume(
+		cap_elem, rc_data.channel, lev );
+	if( error < 0 )
+	{
+	  fprintf( stderr,
+		  "lpsk31: cannot set Capture volume to %d\n", level );
+	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	}
   }
 
-} /* Setup_Dsp_Dev */
+  return;
+} /* Set_Capture_Level() */
 
-/*------------------------------------------------------------------------*/
+/*----------------------------------------------------------------*/
 
-/*  Get_Signal_Sample()
+/*
+ * Following 3 functions close sound card interfaces
+ */
+  void
+Close_Playback( void )
+{
+  if( playback_handle != NULL )
+	snd_pcm_close( playback_handle );
+  playback_handle = NULL;
+
+  if( hw_params != NULL )
+	snd_pcm_hw_params_free( hw_params );
+  hw_params = NULL;
+}
+
+/*----------------------------------------------------------------*/
+
+  void
+Close_Capture( void )
+{
+  if( capture_handle != NULL )
+	snd_pcm_close( capture_handle );
+  capture_handle = NULL;
+
+  if( hw_params != NULL )
+	snd_pcm_hw_params_free( hw_params );
+  hw_params = NULL;
+}
+
+/*----------------------------------------------------------------*/
+
+  void
+Close_Mixer( void )
+{
+  if( mixer_handle != NULL )
+	snd_mixer_close( mixer_handle );
+  mixer_handle = NULL;
+}
+
+/*----------------------------------------------------------------*/
+
+/*  Signal_Sample()
  *
  *  Gets the next DSP sample of the signal input.
  */
 
   int
-Get_Signal_Sample(void)
+Signal_Sample( void )
 {
-  int
-	sample_val, /* Signal sample value */
-	sample_cnt; /* Number of samples read from DSP */
+  snd_pcm_sframes_t error;
+  int sample_val;
 
-  /* Refill DSP samples buffer when needed */
-  if( buffer_idx >= buffer_size )
+  /* Refill recv DSP samples buffer when needed */
+  if( recv_buf_idx >= recv_buf_size )
   {
-	/* Start buffer index according to stereo/mono mode */
-	if( num_chan == 2 ) /* Stereo */
-	  buffer_idx = chan_used;
-	else
-	  buffer_idx = 0;
-
-	/* Read audio samples from file */
-	if( isFlagSet(READ_FILE) )
+	/* Read audio samples from DSP, abort on error */
+	error = snd_pcm_readi( capture_handle, recv_buffer, PERIOD_SIZE );
+	if( error != PERIOD_SIZE )
 	{
-	  /* Fill in the samples buffer from file, return -1 on error */
-	  if( (sample_cnt = fread( samples_buffer, 1,
-			  buffer_size, samples_fp )) == -1 )
-	  {
-		perror( "lpsk31: fread()" );
-		Cleanup();
-		exit( -1 );
-	  }
-	  if( sample_cnt != buffer_size )
-	  {
-		Clear_Flag( READ_FILE );
-		fclose( samples_fp );
-		samples_fp = NULL;
-	  }
+	  fprintf( stderr,
+		  "lpsk31: Signal_Sample(): %s\n", snd_strerror(error) );
 
-	} /* if( isFlagSet(READ_FILE) ) */
-	else
-	{
-	  /* Read audio samples from DSP, abort on error */
-	  if( (sample_cnt = read(dsp_in_fd, samples_buffer, buffer_size)) == -1 )
-	  {
-		perror( "lpsk31: dsp read()" );
-		exit(-1);
-	  }
-	  if( sample_cnt != buffer_size )
-		Abort_On_Error( -6 );
+	  /* Try to recover from error */
+	  Xrun_Recovery( capture_handle, error );
+	} /* if( error  ) */
 
-	} /* else */
+	recv_buf_idx = rc_data.use_chn;
+  } /* End of if( recv_buf_idx >= recv_buf_size ) */
 
-  } /* End of if( buffer_idx == buffer_size ) */
-
-  /* Remove neutral value (128) from samples */
-  sample_val = samples_buffer[buffer_idx] - 128;
+  sample_val = (int)recv_buffer[recv_buf_idx]/256;
 
   /* Increment according to mono/stereo mode */
-  buffer_idx += num_chan;
+  recv_buf_idx += rc_data.num_chn;
 
   return( sample_val );
+} /* End of Signal_Sample() */
 
-} /* End of Get_Signal_Sample() */
-
-/*------------------------------------------------------------------------*/
+/*----------------------------------------------------------------*/
 
 /*  DSP_Write()
  *
@@ -366,80 +591,85 @@ Get_Signal_Sample(void)
  */
 
   void
-DSP_Write( unsigned char *buffer, int buff_size )
+DSP_Write( short *buffer, int buff_size )
 {
-  int sample_cnt;
+  snd_pcm_sframes_t error;
+  int num_writes, idx;
+  short *buff_ptr;
+  snd_pcm_uframes_t num_frames;
 
-  /*** Write samples buffer to DSP or file ***/
-  if( (sample_cnt = write(dsp_out_fd, buffer, buff_size)) == -1 )
-  {
-	perror( "lpsk31: dsp read()" );
-	exit(-1);
-  }
-  if( sample_cnt != buff_size )
-	Abort_On_Error( -11 );
+  /* Number of writes needed to write all data in buffer */
+  num_writes = buff_size / PERIOD_SIZE + 1;
 
-  /* Write samples to file */
-  if( isFlagSet(WRITE_FILE) )
+  /* Index (poiner) to samples buffer */
+  buff_ptr = buffer;
+
+  /* Write samples buffer to DSP in chunks of PERIOD_SIZE */
+  for( idx = 0; idx < num_writes; idx++ )
   {
-	if( (sample_cnt = fwrite(
-			samples_buffer, 1, buff_size, samples_fp )) == -1 )
+	/* Calculate number of frames to write. It should be = PERIOD_SIZE
+	 * if we have >= PERIOD_SIZE samples left to write, or =
+	 * buff_size - (num_writes-1) * PERIOD_SIZE otherwise */
+	num_frames = buff_size - idx * PERIOD_SIZE;
+	if( num_frames > PERIOD_SIZE ) num_frames = PERIOD_SIZE;
+
+	/* Write samples buffer to DSP */
+	error = snd_pcm_writei(	playback_handle, buff_ptr, num_frames );
+	if( error != (snd_pcm_sframes_t)num_frames )
 	{
-	  perror( ": fwrite()" );
-	  exit(-1);
-	}
-	if( (sample_cnt != buff_size) )
-	  Abort_On_Error(-10);
+	  if( error < 0 )
+		fprintf( stderr, "lpsk31: DSP_Write(): %s\n", snd_strerror(error) );
+	  else
+		fprintf( stderr,
+			"lpsk31: DSP_Write(): Written only %d frames out of %d\n",
+			(int)error, (int)num_frames );
 
-  } /* else of: if( isFlagClear(WRITE_FILE) ) */
+	  /* Try to recover from error */
+	  Xrun_Recovery( playback_handle, error );
+	} /* if( error != (snd_pcm_sframes_t)buff_size ) */
 
-} /* DSP_Write() */
-
-/*------------------------------------------------------------------------*/
-
-  void
-Record_Signal( void )
-{
-  /* Count of samples returned by read()/write() */
-  ssize_t sample_cnt;
-
-
-  /* Create a file for writing samples */
-  samples_fp = fopen( "lpsk31.bin", "w+" );
-  if( samples_fp == NULL )
-  {
-	perror( "lpsk31.bin" );
-	exit(-1);
-  }
-
-  /* Stop on Escape */
-  while( getch() != 's' )
-  {
-	/* Fill in the samples buffer from DSP, return -1 on error */
-	if( (sample_cnt = read(dsp_in_fd, samples_buffer, buffer_size)) == -1 )
-	{
-	  perror( "lpsk31: read()" );
-	  exit(-1);
-	}
-	if( sample_cnt != buffer_size )
-	  Abort_On_Error(-1);
-
-	/* Write to file */
-	if( (sample_cnt = fwrite(samples_buffer, 1, buffer_size, samples_fp )) == -1 )
-	{
-	  perror( ": fwrite()" );
-	  exit(-1);
-	}
-	if( (sample_cnt != buffer_size) )
-	  Abort_On_Error(-10);
-
-  } /* while( getch() != KEY_ESC ) */
-
-  fclose( samples_fp );
-  samples_fp = NULL;
+	buff_ptr += PERIOD_SIZE * rc_data.num_chn;
+  } /* for( idx = 0; idx < num_writes; idx++ ) */
 
   return;
+} /* DSP_Write() */
 
-} /* End of Record_Signal() */
+/*----------------------------------------------------------------*/
 
-/*------------------------------------------------------------------------*/
+/* Xrun_Recovery()
+ *
+ * Recover from underrrun (broken pipe) and suspend
+ */
+  void
+Xrun_Recovery( snd_pcm_t *handle, int error )
+{
+  if( error == -EPIPE )
+  {
+	error = snd_pcm_prepare( handle );
+	if( error < 0 )
+	{
+	  fprintf( stderr, "lpsk31: cannot recover from underrun, prepare failed\n" );
+	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	  return;
+	}
+  }
+  else if( error == -ESTRPIPE )
+  {
+	while( (error = snd_pcm_resume(handle)) == -EAGAIN ) sleep(1);
+	if( error < 0 )
+	{
+	  error = snd_pcm_prepare( handle );
+	  if( error < 0 )
+	  {
+		fprintf( stderr, "lpsk31: cannot recover from suspend, prepare failed\n" );
+		fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+		return;
+	  }
+	}
+  }
+
+  return;
+} /* Xrun_Recovery() */
+
+/*----------------------------------------------------------------*/
+

@@ -13,42 +13,35 @@
 #
 ####### SOUND-CARD CONFIGURATION #######
 #
-# Please look in /usr/include/soundcard.h
-# (search for SOUND_DEVICE_NAMES) to find valid device names.
+# ALSA sound card name: Default is hw:0
+hw:0
 #
-# Mixer device: Default is /dev/mixer.
-/dev/mixer
+# Capture source: Default is Line
+Line
 #
-# Input DSP device: Default is /dev/dsp.
-/dev/dsp
-#
-# Output DSP device: Default is /dev/dsp.
-/dev/dsp
+# Capture volume element: Default is Capture
+Capture
 ##
-# Audio capture/recording source: Default is line.
-# Alternative is usually mic or line1 etc.
-line
+# Master volume element: Default is Master
+Master
 #
-# Audio recording level device: Default is igain.
-# Alternative is usually reclev or rec.
-igain
+# PCM  volume element: Default is PCM
+PCM
 #
-# Recording/Capture level: Useful range ~10-100. Default is 50.
-# The correct value must be found by testing, see lpsk31.html.
+# Capture volume: Useful range ~10-100. Default is 50.
 50
 #
-# Volume/PCM level: Useful range ~10-90. Default is 50.
-# The correct value must be found by testing, see lpsk31.html.
+# Playback volume: Useful range ~10-90. Default is 50.
 50
 #
-# Sound card mode: (STEREO | MONO). My default is STEREO because
-# I have two sources (receivers) connected to the sound card.
-STEREO
+# ALSA channel to use: Default is 1
+1
 #
-# Channel in use by lpsk31: (LEFT | RIGHT). My default is RIGHT.
-# When in MONO mode, this field is ignored. On my system at
-# least, only the left channel works in MONO.
-RIGHT
+# Number of channels to use: 1=Mono 2=Stereo
+2
+#
+# Channel in use: 0=Left 1=Right
+1
 #
 ####### End of SOUND-CARD CONFIGURATION #######
 #
@@ -58,10 +51,10 @@ RIGHT
 # Note that a zero setting will disable the squelch function
 5
 #
-# Steady tone duration in msec: Default is 1000 msec (1 sec).
+# Steady tone duration in sec: Default is 1 sec.
 # This is the steady tone transmitted at the beginning and tail
 # end of a transmission (pre-amble and post-amble).
-1000
+1
 #
 # Number of reversals following and preceding the steady tone:
 # Default is 24. These phase reversals are part of the PSK31

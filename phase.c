@@ -7,7 +7,6 @@
  *  lpsk31: An application to transmit and receive
  *  PSK31 signals using a computer's sound card
  *
- *  Copyright (C) 2002  Neoklis Kyriazis
  *
  *  This program is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU General Public License as
@@ -22,7 +21,7 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-#include "lpsk31.h"
+#include "phase.h"
 
 /* Runtime configuration data */
 extern rc_data_t rc_data;
@@ -46,13 +45,13 @@ PSK31_Phase( void )
 	last_lev_q,  /* Last phase detector quadrature signal level */
 
 	/* Four quadrants of a signal cycle (in dsp samples) */
-	quadrant_1 = DSP_SPEED/AUDIO_FREQUENCY/4,
-	quadrant_2 = DSP_SPEED/AUDIO_FREQUENCY/2,
-	quadrant_3 = (3*DSP_SPEED/AUDIO_FREQUENCY)/4,
-	quadrant_4 = DSP_SPEED/AUDIO_FREQUENCY,
+	quadrant_1 = DSP_RATE/AUDIO_FREQUENCY/4,
+	quadrant_2 = DSP_RATE/AUDIO_FREQUENCY/2,
+	quadrant_3 = (3*DSP_RATE/AUDIO_FREQUENCY)/4,
+	quadrant_4 = DSP_RATE/AUDIO_FREQUENCY;
 
 	/* PSK31 element period in DSP samples */
-	elem_half_period = BUFFER_SIZE/2;
+	//elem_half_period = BUFFER_SIZE/2;
 
   int
 	elem_timer,    /* Counter used for producing the baud rate  */
@@ -99,10 +98,10 @@ PSK31_Phase( void )
 	det_level_i = det_level_q = 0;
 
 	/* Summate samples for each half element */
-	for(elem_timer = 0; elem_timer < elem_half_period; elem_timer++ )
+	for(elem_timer = 0; elem_timer < rc_data.psk_elem2; elem_timer++ )
 	{
 	  /* Get next signal sample from buffer */
-	  sample_lev = Get_Signal_Sample();
+	  sample_lev = Signal_Sample();
 
 	  /*** Calculate phase detector in-phase level. ***/
 	  /* Samples are accumulated over a PSK31 element */
@@ -150,10 +149,10 @@ PSK31_Phase( void )
   } /* for( slice_cnt = 0; slice_cnt < 2; slice_cnt++ ) */
 
   /* Normalize detector channel levels */
-  chA_norm_lev_i = chA_level_i / BUFFER_SIZE;
-  chA_norm_lev_q = chA_level_q / BUFFER_SIZE;
-  chB_norm_lev_i = chB_level_i / BUFFER_SIZE;
-  chB_norm_lev_q = chB_level_q / BUFFER_SIZE;
+  chA_norm_lev_i = chA_level_i / 1;
+  chA_norm_lev_q = chA_level_q / 1;
+  chB_norm_lev_i = chB_level_i / 1;
+  chB_norm_lev_q = chB_level_q / 1;
 
   /* Calculate sliding window average values for the channel */
   /* squelch. This is the vector magnitude of in-phase and   */
@@ -205,6 +204,10 @@ PSK31_Phase( void )
   phase_chg = old_phase - carrier_phase;
   old_phase = carrier_phase;
 
+  /* Correct for discontinuity at +-180 deg */
+  if( phase_chg > 180 )       phase_chg -= 360;
+  else if( phase_chg < -180 ) phase_chg += 360;
+
   /* For BPSK phase slip limit = 90 */
   /* For QPSK phase slip limit = 45 */
   if( isFlagSet(MODE_BPSK) )
@@ -238,7 +241,7 @@ PSK31_Phase( void )
  *
  *  Calculates an aproximate integer arc tan (in deg)
  *  for a given pair of integer parameters (y,x). The
- *  result is in range 0 - +-180 deg, max error ~.5 deg.
+ *  result is in range 0 - +/-180 deg, max error ~.5 deg.
  *  The first approximation used is arctan = 45*y/x for
  *  y<x and for y>x arctan = 90-45*x/y. This is used in
  *  a table to improve the accuracy. The signs of x
@@ -255,15 +258,13 @@ Arc_Tan( int y, int x )
   /* Arc tan correction table */
   char table[46] = ARC_TAN_TABLE;
 
-  /* Avoid divide by zero */
-  if( (x == 0) && (y == 0) )
-	return( 0 );
 
   /* Angle +-(0-45) deg or (135-225) */
   if( abs(y) <= abs(x) )
   {
 	/* First approximation */
-	angle = (45 * y) / x;
+	if( x == 0 ) angle = 45;
+	else angle = (45 * y) / x;
 
 	/* Use correction table for more accuracy */
 	if( angle < 0 )
@@ -272,19 +273,16 @@ Arc_Tan( int y, int x )
 	  angle =  (int) table[angle];
 
 	/* Set result in correct quadrant */
-	if( x < 0 )
-	  arc_tan = 180 + angle;
-	else
-	  if( y < 0 )
-		arc_tan = 360 + angle;
-	  else
-		arc_tan = angle;
+	if( x < 0 )      arc_tan = 180 + angle;
+	else if( y < 0 ) arc_tan = 360 + angle;
+	else             arc_tan = angle;
 
   }  /* if( abs(y) <= abs(x) ) */
   else /* Angle (45-135) or (225-315) */
   {
 	/* First approximation */
-	angle = (45 * x) / y;
+	angle = 0;
+	if( y ) angle = (45 * x) / y;
 
 	/* Use correction table for more accuracy */
 	if( angle < 0 )
@@ -293,10 +291,8 @@ Arc_Tan( int y, int x )
 	  angle =  (int) table[angle];
 
 	/* Set result in correct quadrant */
-	if( y < 0 )
-	  arc_tan = 270 - angle;
-	else
-	  arc_tan = 90 - angle;
+	if( y < 0 ) arc_tan = 270 - angle;
+	else arc_tan = 90 - angle;
 
   } /* else */
 
