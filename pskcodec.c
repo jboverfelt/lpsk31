@@ -217,7 +217,6 @@ Transmit_Preamble( void )
   {
 	xmit_buffer[buff_idx] = (short)
 	  ( (cosine_table[cosine_idx] * sine_table[sine_idx]) >> 15 );
-	xmit_buffer[buff_idx] = sine_table[sine_idx];
 	buff_idx += rc_data.num_chn;
 
 	if( ++sine_idx >= rc_data.tone_period ) sine_idx = 0;
@@ -733,7 +732,7 @@ Morse_Transmit( char *mesg )
   /* Tables of Morse and ascii characters */
   int
 	ascii_char[] = ASCII_CHAR,
-	morse_code[] = MORSE_CODE;
+	morse_code[NUM_MORSE_CHARS+1] = MORSE_CODE;
 
 
   /* Duration in samples of Morse elem */

@@ -58,13 +58,13 @@ short *recv_buffer = NULL;
 Setup_Sound_Card( void )
 {
   /* Open PCM for capture. (Aborts on error) */
-  Open_Capture();  
+  Open_Capture();
 
   /* Open PCM for playback. (Aborts on error) */
-  Open_Playback();  
+  Open_Playback();
 
   /* Open Mixer. (Aborts on error) */
-  Open_Mixer();  
+  Open_Mixer();
 
 } /* End of Setup_Sound_Card() */
 
@@ -508,7 +508,7 @@ Set_Capture_Level( int level )
 
 /*
  * Following 3 functions close sound card interfaces
- */
+ *
   void
 Close_Playback( void )
 {
@@ -521,7 +521,6 @@ Close_Playback( void )
   hw_params = NULL;
 }
 
-/*----------------------------------------------------------------*/
 
   void
 Close_Capture( void )
@@ -535,7 +534,6 @@ Close_Capture( void )
   hw_params = NULL;
 }
 
-/*----------------------------------------------------------------*/
 
   void
 Close_Mixer( void )
@@ -545,7 +543,7 @@ Close_Mixer( void )
   mixer_handle = NULL;
 }
 
-/*----------------------------------------------------------------*/
+*----------------------------------------------------------------*/
 
 /*  Signal_Sample()
  *

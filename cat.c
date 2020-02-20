@@ -24,7 +24,7 @@
 #include "cat.h"
 
 /* Runtime config data */
-rc_data_t rc_data;
+extern rc_data_t rc_data;
 
 /*------------------------------------------------------------------------*/
 
@@ -80,13 +80,13 @@ Read_Rx_Status( char *mode, char *freq, char *rst )
 	/* If freq > 100, enter only MHz value */
 	if( temp >= 1000 )
 	{
-	  snprintf( freq, 4, "%3d", temp/10 );
+	  snprintf( freq, 5, "%4d", temp/10 );
 	  freq[3] = '.';
 	  freq[4] = '\0';
 	}
 	else /* Enter to .1 Mhz */
 	{
-	  snprintf( freq, 4, "%3d", temp );
+	  snprintf( freq, 5, "%4d", temp );
 	  freq[3] = freq[2];
 	  freq[2] = '.';
 	  freq[4] = '\0';

@@ -339,7 +339,7 @@ Transmit_Macro( WINDOW *transmit_win )
   char *tags[NUM_OF_TAGS] = TAG_TABLE;
 
   char
-	tag_str[10], /* String within a tag <> */
+	tag_str[14], /* String within a tag <> */
 	tag_rep[22]; /* Tag replacement string */
 
   /* Stay in Tx mode if last char is ~ */
@@ -1316,27 +1316,6 @@ Save_QSO_Record( void )
   Set_Flag( RECORD_SAVED );
 
 } /* Save_QSO_Record() */
-
-/*------------------------------------------------------------------------*/
-
-/*  Draw_Box()
- *
- *  Function to draw a box of given size and position in the root window
- */
-
-  void
-Draw_Box( int rows, int cols, int top, int left )
-{
-  mvvline( top + 1, left, ACS_VLINE, rows - 2 );
-  mvvline( top + 1, left + cols - 1, ACS_VLINE, rows - 2 );
-  mvhline( top, left + 1, ACS_HLINE, cols - 2 );
-  mvhline( top + rows - 1, left + 1, ACS_HLINE, cols - 2 );
-  mvaddch( top, left, ACS_ULCORNER );
-  mvaddch( top, left + cols - 1, ACS_URCORNER );
-  mvaddch( top + rows - 1, left, ACS_LLCORNER );
-  mvaddch( top + rows - 1, left + cols - 1, ACS_LRCORNER );
-
-} /* End of Draw_Box() */
 
 /*------------------------------------------------------------------------*/
 

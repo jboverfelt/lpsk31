@@ -661,10 +661,4 @@ Clear_Flag( int flag )
   Flags &= ~flag;
 }
 
-  void
-Toggle_Flag( int flag )
-{
-  Flags ^= flag;
-}
-
 /*------------------------------------------------------------------------*/

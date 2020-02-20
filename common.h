@@ -87,7 +87,7 @@
 #define SUCCESS	 0
 
 /* lpsk31 version string */
-#define VERSION  "lpsk31 1.2"
+#define VERSION  "lpsk31 1.4"
 
 /*-------------------------------------------------------------------*/
 
