@@ -781,13 +781,20 @@ Screen_Receive_Window( void )
 			  form_driver( qso_form, REQ_NEXT_FIELD );
 
 			  /* Enter field values to QSO data structure */
-			  strncpy(qso_record.call,    field_buffer(data_field[0],0),15);
-			  strncpy(qso_record.rst_in,  field_buffer(data_field[1],0), 4);
-			  strncpy(qso_record.rst_out, field_buffer(data_field[2],0), 4);
-			  strncpy(qso_record.name,    field_buffer(data_field[3],0),12);
-			  strncpy(qso_record.qth,     field_buffer(data_field[4],0),14);
-			  strncpy(qso_record.loc,     field_buffer(data_field[5],0), 7);
-			  strncpy(qso_record.freq,    field_buffer(data_field[6],0), 5);
+			  snprintf(qso_record.call, sizeof qso_record.call, "%s",
+					   field_buffer(data_field[0],0));
+			  snprintf(qso_record.rst_in, sizeof qso_record.rst_in, "%s",
+					   field_buffer(data_field[1],0));
+			  snprintf(qso_record.rst_out, sizeof qso_record.rst_out, "%s",
+					   field_buffer(data_field[2],0));
+			  snprintf(qso_record.name, sizeof qso_record.name, "%s",
+					   field_buffer(data_field[3],0));
+			  snprintf(qso_record.qth, sizeof qso_record.qth, "%s",
+					   field_buffer(data_field[4],0));
+			  snprintf(qso_record.loc, sizeof qso_record.loc, "%s",
+					   field_buffer(data_field[5],0));
+			  snprintf(qso_record.freq, sizeof qso_record.freq, "%s",
+					   field_buffer(data_field[6],0));
 
 			  /* Enter operating mode */
 			  if( isFlagSet(MODE_BPSK) )
@@ -819,13 +826,20 @@ Screen_Receive_Window( void )
 			  }
 
 			  /* Enter field values to QSO data structure */
-			  strncpy(qso_record.call,    field_buffer(data_field[0],0),15);
-			  strncpy(qso_record.rst_in,  field_buffer(data_field[1],0), 4);
-			  strncpy(qso_record.rst_out, field_buffer(data_field[2],0), 4);
-			  strncpy(qso_record.name,    field_buffer(data_field[3],0),12);
-			  strncpy(qso_record.qth,     field_buffer(data_field[4],0),14);
-			  strncpy(qso_record.loc,     field_buffer(data_field[5],0), 7);
-			  strncpy(qso_record.freq,    field_buffer(data_field[6],0), 5);
+			  snprintf(qso_record.call, sizeof qso_record.call, "%s",
+					   field_buffer(data_field[0],0));
+			  snprintf(qso_record.rst_in, sizeof qso_record.rst_in, "%s",
+					   field_buffer(data_field[1],0));
+			  snprintf(qso_record.rst_out, sizeof qso_record.rst_out, "%s",
+					   field_buffer(data_field[2],0));
+			  snprintf(qso_record.name, sizeof qso_record.name, "%s",
+					   field_buffer(data_field[3],0));
+			  snprintf(qso_record.qth, sizeof qso_record.qth, "%s",
+					   field_buffer(data_field[4],0));
+			  snprintf(qso_record.loc, sizeof qso_record.loc, "%s",
+					   field_buffer(data_field[5],0));
+			  snprintf(qso_record.freq, sizeof qso_record.freq, "%s",
+					   field_buffer(data_field[6],0));
 
 			  /* Mark QSO record as having some entries */
 			  Set_Flag( RECORD_EDITED );

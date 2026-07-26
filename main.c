@@ -153,21 +153,37 @@ Load_Config( void )
 	idx;
 
   char
-	rc_fpath[64], /* File path to lpsk31rc */
-	line[81];     /* Buffer for Load_Line  */
+	rc_fpath[4096], /* File path to lpsk31rc */
+	line[81];       /* Buffer for Load_Line  */
+
+  const char *home;
 
   /* Config file pointer */
   FILE *lpsk31rc;
 
 
   /* Setup file path to lpsk31rc */
-  snprintf( rc_fpath, 64, "%s/lpsk31/lpsk31rc", getenv("HOME") );
+  home = getenv( "HOME" );
+  if( home == NULL || home[0] == '\0' )
+  {
+	fprintf( stderr, "lpsk31: HOME is not set\n" );
+	exit( -1 );
+  }
+  if( snprintf(rc_fpath, sizeof rc_fpath, "%s/lpsk31/lpsk31rc", home) >=
+	  (int)sizeof rc_fpath )
+  {
+	fprintf( stderr, "lpsk31: configuration path is too long\n" );
+	exit( -1 );
+  }
 
   /* Open lpsk31rc file */
   lpsk31rc = fopen( rc_fpath, "r" );
   if( lpsk31rc == NULL )
   {
 	perror( rc_fpath );
+	fprintf( stderr,
+		 "Run 'make install-config', then edit %s for your station and sound card.\n",
+		 rc_fpath );
 	exit( -1 );
   }
 
@@ -305,7 +321,7 @@ Load_Config( void )
 		Abort_On_Error( -12 );
 
 	  /* Enter label string if all OK */
-	  strncpy( label[lb_idx], &line[1], 16 );
+	  memcpy( label[lb_idx], &line[1], ln_idx - 1 );
 	  label[lb_idx][ln_idx - 1] = '\0';
 
 	  /*** Read macros ***/

@@ -66,6 +66,9 @@ Setup_Sound_Card( void )
   /* Open Mixer. (Aborts on error) */
   Open_Mixer();
 
+  Set_Capture_Level( rc_data.cap_lev );
+  Set_Playback_Level( rc_data.pbk_lev );
+
 } /* End of Setup_Sound_Card() */
 
 /*--------------------------------------------------------------------*/
@@ -88,6 +91,7 @@ Open_PCM(
   {
 	fprintf( stderr, "lpsk31: cannot open sound device %s\n", rc_data.snd_card );
 	fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+	exit( ERROR );
   }
 
   /* Allocate memory to hardware parameters structure */
@@ -219,10 +223,6 @@ Open_Capture( void )
   }
   memset( recv_buffer, 0, (size_t)recv_buf_size * sizeof(short) );
 
-  /* Set Capture volume. Failure to set
-   * volume level is not considered fatal */
-  Set_Capture_Level( rc_data.cap_lev );
-
   return;
 } /* Open_Capture() */
 
@@ -237,10 +237,6 @@ Open_Playback( void )
 {
   /* Open & setup pcm for Playback */
   Open_PCM(	&playback_handle, SND_PCM_STREAM_PLAYBACK );
-
-  /* Set Playback volume. Failure to set
-   * volume level is not considered fatal */
-  Set_Playback_Level( rc_data.pbk_lev );
 
   /* Size of transmit samples buffer in frames */
   if( rc_data.tone_dur > 0 )
@@ -322,37 +318,43 @@ Open_Mixer( void )
 	exit( ERROR );
   }
 
-  /* Find capture source selem */
-  snd_mixer_selem_id_set_index( sid, 0 );
-  snd_mixer_selem_id_set_name( sid, rc_data.cap_src );
-  elem = snd_mixer_find_selem( mixer_handle, sid );
-  if( !elem )
+  /* Find capture source selem if specified */
+  elem = NULL;
+  if( strcmp(rc_data.cap_src, "--") != 0 )
   {
-	fprintf( stderr,
-		"lpsk31: cannot find capture source element %s\n",	rc_data.cap_src );
-	snd_mixer_selem_id_free(sid);
-	exit( ERROR );
-  }
-
-  /* Set capture switch for capture source */
-  if( snd_mixer_selem_has_capture_switch(elem) )
-  {
-	error = snd_mixer_selem_set_capture_switch(
-		elem, rc_data.channel, 1 );
-	if( error < 0 )
+	snd_mixer_selem_id_set_index( sid, 0 );
+	snd_mixer_selem_id_set_name( sid, rc_data.cap_src );
+	elem = snd_mixer_find_selem( mixer_handle, sid );
+	if( !elem )
 	{
 	  fprintf( stderr,
-		  "lpsk31: cannot set capture source to %s\n", rc_data.cap_src );
-	  fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+		  "lpsk31: cannot find capture source element %s\n",
+		  rc_data.cap_src );
 	  snd_mixer_selem_id_free(sid);
 	  exit( ERROR );
 	}
-  }
-  else
-  {
-	fprintf( stderr,
-		"lpsk31: device %s does not have Capture capability\n", rc_data.cap_src );
-	exit( ERROR );
+
+	if( snd_mixer_selem_has_capture_switch(elem) )
+	{
+	  error = snd_mixer_selem_set_capture_switch(
+		  elem, rc_data.channel, 1 );
+	  if( error < 0 )
+	  {
+		fprintf( stderr,
+			"lpsk31: cannot set capture source to %s\n", rc_data.cap_src );
+		fprintf( stderr, "lpsk31: %s\n", snd_strerror(error) );
+		snd_mixer_selem_id_free(sid);
+		exit( ERROR );
+	  }
+	}
+	else
+	{
+	  fprintf( stderr,
+		  "lpsk31: device %s does not have Capture capability\n",
+		  rc_data.cap_src );
+	  snd_mixer_selem_id_free(sid);
+	  exit( ERROR );
+	}
   }
 
   /* Find capture volume selem if not -- */
@@ -398,7 +400,7 @@ Open_Mixer( void )
 	//FIXME set volume
 
 	/* Set PCM playback switch for playback source */
-	if( pcm_elem && snd_mixer_selem_has_playback_switch(elem) )
+	if( pcm_elem && snd_mixer_selem_has_playback_switch(pcm_elem) )
 	{
 	  error = snd_mixer_selem_set_playback_switch(
 		  pcm_elem, rc_data.channel, 1 );
