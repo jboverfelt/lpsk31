@@ -18,6 +18,31 @@
 
  PLEASE READ the HTML manual doc/lpsk31.html for installation instructions.
 
+ Configuration
+ ------------
+
+ lpsk31 reads its runtime configuration from a key = value file named
+ lpsk31rc, located in the user's XDG config directory
+ ($XDG_CONFIG_HOME/lpsk31/lpsk31rc, default ~/.config/lpsk31/lpsk31rc).
+ If not found there, lpsk31 checks each directory in $XDG_CONFIG_DIRS
+ (default /etc/xdg) and finally the legacy ~/lpsk31/lpsk31rc location,
+ from which it auto-migrates the file on first run. See the
+ "lpsk31rc configuration" section of the manual for details and the
+ default/lpsk31rc file for a reference.
+
+ Rig control
+ ----------
+
+ lpsk31's rig control is built on top of the Hamlib library. It works
+ with any rig supported by Hamlib either by connecting directly to a
+ device (set `model` and `device` in the `[rig]` section) or by
+ talking to a running rigctld server (set only `device = host:port`).
+
+ When enabled, lpsk31 sets the rig to USB or USB-D (digital USB; e.g.
+ PKTUSB in rigctl terms) for BPSK and QPSK-USB, LSB or its digital
+ equivalent for QPSK-LSB, in both transmit and receive direction; no
+ CW mode is forced. Toggle rig control with the 't' key at runtime.
+
  Neoklis Kyriazis  15 August 2002
 
 

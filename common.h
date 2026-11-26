@@ -1,4 +1,4 @@
-/*  lpsk31.h
+/*  common.h
  *
  *  Header file for lpsk31
  */
@@ -21,14 +21,14 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-
 #ifndef COMMON_H
-#define COMMON_H  1
+#define COMMON_H 1
 
 #include <signal.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <form.h>
 #include <ncurses.h>
@@ -38,117 +38,106 @@
 #include <alsa/asoundlib.h>
 
 /* Some color definitions */
-#define COLOR_YELLOW_BLUE        8  /* Yellow fore, blue background   */
-#define COLOR_WHITE_BLUE         9  /*  White fore, blue background   */
-#define COLOR_WHITE_RED         10  /*  White fore, red background    */
-#define COLOR_WHITE_YELLOW      11  /*  White fore, yellow background */
-#define COLOR_WHITE_GREEN       12  /*  White fore, green background  */
+#define COLOR_YELLOW_BLUE 8   /* Yellow fore, blue background   */
+#define COLOR_WHITE_BLUE 9    /*  White fore, blue background   */
+#define COLOR_WHITE_RED 10    /*  White fore, red background    */
+#define COLOR_WHITE_YELLOW 11 /*  White fore, yellow background */
+#define COLOR_WHITE_GREEN 12  /*  White fore, green background  */
 
 /* General definitions for signal processing */
-#define AUDIO_FREQUENCY			500 /* Revceiver BFO frequency Hz */
-#define DSP_RATE			  48000 /* DSP sampling rate */
-#define BAUD_RATE			  31.25 /* DSP sampling rate */
+#define AUDIO_FREQUENCY 500 /* Revceiver BFO frequency Hz */
+#define DSP_RATE 48000      /* DSP sampling rate */
+#define BAUD_RATE 31.25     /* DSP sampling rate */
 
 /* Control flags */
-#define NO_SQUELCH           0x000001 /* Suppress squelch */
-#define SQUELCH_OPEN         0x000002 /* Squelch is open  */
-#define MODE_BPSK            0x000010 /* Mode is BPSK     */
-#define MODE_QPSK_USB        0x000020 /* Mode is QPSK-USB */
-#define MODE_QPSK_LSB        0x000040 /* Mode is QPSK-LSB */
-#define ENABLE_CAT           0x000080 /* Enable Trcvr CAT */
-#define AUTO_QSO_DATA        0x000100 /* Auto collection of qso data */
-#define RECORD_QSO           0x000200 /* Enable recording of QSO's   */
-#define NCURSES_INIT         0x000400 /* Curses inteface initialized */
-#define TRANSMIT_MACRO       0x000800 /* Start transmission of Macro */
-#define STAY_IN_TX_MODE      0x001000 /* Remain in Transmisiion mode */
-#define CAPITAL_LETTERS      0x002000 /* Capitalize letters in Trans */
-#define CHANNEL_A_SELECT     0x004000 /* Detector channel A selected */
-#define MODE_TRANSMIT        0x008000 /* lpsk31 is in Transmit mode  */
-#define RECORD_EDITED        0x010000 /* Some data entered in record */
-#define RECORD_SAVED         0x020000 /* Record was saved to file    */
-
+#define NO_SQUELCH 0x000001       /* Suppress squelch */
+#define SQUELCH_OPEN 0x000002     /* Squelch is open  */
+#define MODE_BPSK 0x000010        /* Mode is BPSK     */
+#define MODE_QPSK_USB 0x000020    /* Mode is QPSK-USB */
+#define MODE_QPSK_LSB 0x000040    /* Mode is QPSK-LSB */
+#define ENABLE_RIG 0x000080       /* Enable rig control (CAT) */
+#define AUTO_QSO_DATA 0x000100    /* Auto collection of qso data */
+#define RECORD_QSO 0x000200       /* Enable recording of QSO's   */
+#define NCURSES_INIT 0x000400     /* Curses inteface initialized */
+#define TRANSMIT_MACRO 0x000800   /* Start transmission of Macro */
+#define STAY_IN_TX_MODE 0x001000  /* Remain in Transmisiion mode */
+#define CAPITAL_LETTERS 0x002000  /* Capitalize letters in Trans */
+#define CHANNEL_A_SELECT 0x004000 /* Detector channel A selected */
+#define MODE_TRANSMIT 0x008000    /* lpsk31 is in Transmit mode  */
+#define RECORD_EDITED 0x010000    /* Some data entered in record */
+#define RECORD_SAVED 0x020000     /* Record was saved to file    */
 
 /* Some character definitions */
-#define CR                     0x0d /* Carriage Return */
-#define LF                     0x0a /* Line Leed       */
-#define BS                     0x08 /* Back Space      */
-#define KEY_RET                0x0d /* Keycode of RETURN  */
-#define KEY_ESC                0x1b /* Keycode of ESCAPE  */
-#define KEY_CTRL_W             0x17 /* Keycode of Ctrl-W  */
-#define KEY_TAB                0x09 /* Keycode of TAB     */
-#define KEY_SPACE              0x20 /* Keycode of space   */
-#define MACRO_KEY              0xff /* Function key F1-F9 */
-#define NO_CHARACTER           0x80 /* No psk31 character decoded yet */
+#define CR 0x0d           /* Carriage Return */
+#define LF 0x0a           /* Line Leed       */
+#define BS 0x08           /* Back Space      */
+#define KEY_RET 0x0d      /* Keycode of RETURN  */
+#define KEY_ESC 0x1b      /* Keycode of ESCAPE  */
+#define KEY_CTRL_W 0x17   /* Keycode of Ctrl-W  */
+#define KEY_TAB 0x09      /* Keycode of TAB     */
+#define KEY_SPACE 0x20    /* Keycode of space   */
+#define MACRO_KEY 0xff    /* Function key F1-F9 */
+#define NO_CHARACTER 0x80 /* No psk31 character decoded yet */
 
 /* 'NUL' character used as 'last character' flag */
-#define NULL_CHAR          0x00
+#define NULL_CHAR 0x00
 
-#define ERROR	-1
-#define SUCCESS	 0
+#define ERROR -1
+#define SUCCESS 0
 
 /* lpsk31 version string */
-#define VERSION  "lpsk31 1.4"
+#define VERSION "lpsk31 1.4"
 
 /*-------------------------------------------------------------------*/
 
+/* snd.c, main.c */
+
 /* Configuration parameters structure */
-typedef struct
-{
-  char
-	snd_card[32], /* Sound card name */
-	cap_src[32],  /* Capture source  */
-	cap_vol[32],  /* Capture volume control  */
-	mst_vol[32],  /* Master volume control   */
-	pcm_vol[32];  /* Playback volume control */
+typedef struct {
+  char snd_card[32], /* Sound card name */
+    cap_src[32],     /* Capture source  */
+    cap_vol[32],     /* Capture volume control  */
+    mst_vol[32],     /* Master volume control   */
+    pcm_vol[32];     /* Playback volume control */
 
-  int
-	channel,	/* ALSA "channel" for use in mixer setup */
-	num_chn,	/* Number of audio channels (2=stereo, 1=mono) */
-	use_chn,	/* Channel in use (frontleft=0, frontright=1 etc) */
-	cap_lev,	/* Recording/Capture level */
-	pbk_lev;	/* Playback (volume) level */
+  int channel, /* ALSA "channel" for use in mixer setup */
+    num_chn,   /* Number of audio channels (2=stereo, 1=mono) */
+    use_chn,   /* Channel in use (frontleft=0, frontright=1 etc) */
+    cap_lev,   /* Recording/Capture level */
+    pbk_lev;   /* Playback (volume) level */
 
-  char
-	mode[7],     /* Mono | Stereo   */
-	serial[15];  /* CAT serial port */
+  int tone_period, psk_elem, psk_elem2, sqlch_thr, /* Squelch threshold    */
+    tone_dur, /* Preamble tone duration   */
+    num_rev,  /* Pre/post-amble reversals */
+    wpm,      /* Morse encoder speed: wpm */
+    wwrap;    /* Word wrap column number  */
 
-  int
-	tone_period,
-	psk_elem,
-	psk_elem2,
-	sqlch_thr,  /* Squelch threshold    */
-	tone_dur,   /* Preamble tone duration   */
-	num_rev,    /* Pre/post-amble reversals */
-	wpm,        /* Morse encoder speed: wpm */
-	wwrap;      /* Word wrap column number  */
+  /* Rig control configuration */
+  char rig_device[256],    /* rigctl host:port, or local device path */
+    rig_model[32];         /* Optional hamlib model (e.g. "3073")   */
+  int rig_enabled_default; /* 0 = off (default), 1 = start enabled */
 
 } rc_data_t;
 
 /* Operator and location data */
-typedef struct
-{
-  char
-	call[17],
-	name[17],
-	qth[21],
-	loc[7];
+typedef struct {
+  char call[17], name[17], qth[21], loc[7];
 
 } op_data_t;
 
 /*-------------------------------------------------------------------*/
 
-/* Function prototypes produced by cproto */
-/* cat.c */
-void Read_Rx_Status(char *mode, char *freq, char *rst);
-void Open_Tcvr_Serial(void);
-int Write_Tcvr_Command(unsigned char *cmnd);
-void Set_Tcvr_Mode(void);
-int Read_Tcvr_Serial(unsigned char *cmnd, int block_size);
-void Close_Tcvr_Serial(void);
+/* Function prototypes */
+/* rig.c */
+int rig_connect(void);
+void rig_disconnect(void);
+int rig_is_open(void);
+void rig_set_mode_and_ptt(void);
+int rig_get_status(char* freq, char* rst);
+const char* rig_last_error(void);
 /* main.c */
-int main(int argc, char *argv[]);
+int main(int argc, char* argv[]);
 void Load_Config(void);
-int Load_Line(char *buff, FILE *pfile);
 void Usage(void);
 void Cleanup(void);
 void Abort_On_Error(int why);
@@ -172,27 +161,27 @@ int Viterbi_Decoder(int phase_chg);
 int Distance(int A, int B);
 unsigned char Parity(unsigned char data);
 void Init_Viterbi(void);
-void Morse_Transmit(char *mesg);
+void Morse_Transmit(char* mesg);
 void Make_Cosine_Table(void);
 void Make_Sine_Table(void);
 /* screen.c */
 void Screen_Root(void);
 void Screen_Transmit_Window(void);
-int Transmit_Macro(WINDOW *transmit_win);
-void Transmit_Character(int chr, WINDOW *transmit_win);
+int Transmit_Macro(WINDOW* transmit_win);
+void Transmit_Character(int chr, WINDOW* transmit_win);
 void Screen_Receive_Window(void);
 void Screen_Phase_Window(int carrier_phase, int phase_slip, int squelch);
-int Confirm_Save(WINDOW *receive_win);
+int Confirm_Save(WINDOW* receive_win);
 void Save_QSO_Record(void);
 void Draw_Box(int rows, int cols, int top, int left);
-void Draw_Hline(WINDOW *win, int top, int left, int right);
-void Draw_Vline(WINDOW *win, int top, int left, int bottom);
+void Draw_Hline(WINDOW* win, int top, int left, int right);
+void Draw_Vline(WINDOW* win, int top, int left, int bottom);
 /* sound.c */
 void Setup_Sound_Card(void);
 int Signal_Sample(void);
-void DSP_Write(short *buffer, int buff_size);
-void Open_PCM(snd_pcm_t **handle, snd_pcm_stream_t stream);
-void Xrun_Recovery(snd_pcm_t *handle, int error);
+void DSP_Write(short* buffer, int buff_size);
+void Open_PCM(snd_pcm_t** handle, snd_pcm_stream_t stream);
+void Xrun_Recovery(snd_pcm_t* handle, int error);
 void Open_Capture(void);
 void Open_Playback(void);
 void Open_Mixer(void);
@@ -205,4 +194,3 @@ void Close_Mixer(void);
 /*-------------------------------------------------------------------*/
 
 #endif
-

@@ -1,4 +1,7 @@
-/* cat.h */
+/* rig.h
+ *
+ *  Rig control functions for lpsk31, built on the Hamlib library.
+ */
 
 /*
  *  lpsk31: An application to transmit and receive
@@ -18,24 +21,17 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-
-#ifndef CAT_H
-#define CAT_H  1
+#ifndef RIG_H
+#define RIG_H 1
 
 #include "common.h"
 
-/* Command codes for FT847 CAT */
-unsigned char
-  CAT_ON[]     = {    0, 0, 0, 0, 0x00 },
-  CAT_OFF[]    = {    0, 0, 0, 0, 0x80 },
-  PTT_ON[]     = {    0, 0, 0, 0, 0x08 },
-  PTT_OFF[]    = {    0, 0, 0, 0, 0x88 },
-  MODE_LSB[]   = {    0, 0, 0, 0, 0x07 },
-  MODE_USB[]   = {    1, 0, 0, 0, 0x07 },
-  MODE_CW[]    = {    2, 0, 0, 0, 0x07 },
-  MODE_CWR[]   = {    3, 0, 0, 0, 0x07 },
-  MODE_CWN[]   = { 0x82, 0, 0, 0, 0x07 },
-  MODE_CWNR[]  = { 0x83, 0, 0, 0, 0x07 };
+/* Rig control (Hamlib-backed) */
+int rig_connect(void);
+void rig_disconnect(void);
+int rig_is_open(void);
+void rig_set_mode_and_ptt(void);
+int rig_get_status(char* freq, char* rst);
+const char* rig_last_error(void);
 
 #endif
-

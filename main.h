@@ -21,14 +21,12 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-
 #ifndef MAIN_H
-#define MAIN_H  1
+#define MAIN_H 1
 
 #include "common.h"
 
 /* Number of labels for commands  */
-#define NUM_OF_LABELS             9
+#define NUM_OF_LABELS 9
 
 #endif
-

@@ -62,12 +62,10 @@ conditions.</p>
 <p>Transmission of PSK31-encoded characters is realized by writing
 pre-computed audio samples to the sound card's DSP and feeding the
 resultant audio signal to the transmitter's input. The transmitter
-must be in the SSB mode during transmission but for reception a
-narrow-bandwidth mode like CW-Narrow is preferable since PSK31
+is normally set to USB or USB-D (digital USB) mode since PSK31
 theoretically only occupies about 32 Hz of bandwidth. lpsk31 has
-built-in CAT control capability for the Yaesu FT-847 Transceiver
-which, when enabled, can change the operating mode
-automatically.</p>
+built-in rig-control capability via the Hamlib library, which, when
+enabled, can change the operating mode and PTT automatically.</p>
 <p><a name="Use" id="Use"><b>Usage:</b></a> lpsk31 [-hv]</p>
 <p>-h: Print usage information and exit.</p>
 <p>-v: Print version number and exit.</p>
@@ -78,7 +76,7 @@ lpsk31 automatically prepares the sound card and sets the line
 input level at the mixer to about 50%. For proper operation the
 level of the input signal must be adjusted from the receiver, if
 volume control is available, or by changing the value of the
-Recording/Capture level in the ~/lpsk31/lpsk31rc run time
+Recording/Capture level in the ~/.config/lpsk31/lpsk31rc run time
 configuration file, if audio is taken from a fixed-volume source
 such as the "data" i/o port. The output audio level is also set to
 50% although again this will need to be set-up properly for
@@ -114,13 +112,54 @@ positions about 90 or 180 deg from each for QPSK.<br>
 More on this in the <a href="#Operation">Operation</a> section.<br>
 In the center of the carrier phase display the phase detector
 channel in use (A or B) is shown.</p>
+<p><a name="RigControl" id="RigControl"><b>Rig control via Hamlib</b></a><br>
+lpsk31 supports rig control through the <a
+href="https://hamlib.sourceforge.net">Hamlib</a> library, which
+provides a single API for dozens of radio manufacturers. Rig control
+is configurable through the <code>[rig]</code> section of the
+lpsk31rc configuration file:
+<pre>
+[rig]
+device = 127.0.0.1:4532    # rigctld host:port (recommended)
+model =                    # empty = NET rigctl backend
+enabled = false            # auto-connect at startup
+</pre>
+If you run a <b>rigctld</b> server (see <code>rigctld --help</code>),
+leave <code>model</code> blank and set <code>device</code> to the
+server's host:port (e.g. <code>127.0.0.1:4532</code>). This is the
+recommended setup because it lets one <code>rigctld</code> process
+serve all applications on the machine.
+<p>If you control a radio directly (no rigctld), set
+<code>model</code> to the Hamlib model number for your rig (run
+<code>rigctl -l</code> to list models; e.g. <code>3073</code> for
+the Icom IC-7300) and set <code>device</code> to the device path
+(e.g. <code>/dev/ic7300</code>). Hamlib model numbers are stable for
+particular rigs; see the Hamlib documentation for details.
+<p>When enabled, lpsk31 sets the rig to the correct mode and
+asserts or releases PTT to match the transmit/receive direction:
+
+<ul>
+<li>For BPSK and QPSK-USB it uses USB; for QPSK-LSB it uses LSB.</li>
+<li>If the rig supports a digital mode (e.g. PKTUSB / USB-D in rigctl
+terms), that digital USB/LSB mode is used instead of the analog SSB
+mode. This is what most HF digital-mode rigs expect.</li>
+<li>Both transmit and receive use the same mode (USB or USB-D); no
+mode is forced back to CW on reception.</li>
+</ul>
+
+Frequency, RST and operating details are read back from the rig
+when filling in the QSO record form. Note that the operating
+frequency is read from the rig's current VFO at the time the form
+is posted.
+</p>
 <p><a name="Macros" id="Macros"><b>Macros in Transmit
 mode</b></a><br>
 lpsk31 allows 9 pre-recorded Macros to be bound to the F1-F9
 Function keys for easy transmission of repeated messages like
 call-sign exchanges, station info, BTU, sign-off etc. Theses Macros
-are stored in the 'lpsk31rc' run time configuration file (in
-~/lpsk31/) and are invoked by keying the relevant Function key.
+are stored in the 'lpsk31rc' run time configuration file (in the
+XDG user config directory, e.g. ~/.config/lpsk31/) and are invoked by
+keying the relevant Function key.
 Short labels for these Macros are also stored in lpsk31rc and are
 displayed in the 'Commands' boxed window at the bottom right of the
 screen, for easy identification. For even more operating
@@ -151,6 +190,25 @@ special codes that lpsk31 can currently recognize are in the header
 file lpsk31.h. The table of characters has the ASCII symbol on the
 left, the Varicode bit pattern in the middle and the equivalent HEX
 code on the right.</a></p>
+<p><a name="Config" id="Config"><b>lpsk31rc configuration</b></a><br>
+lpsk31 reads its runtime configuration from a <i>key = value</i> file
+named <code>lpsk31rc</code>. It looks for the file in the following
+locations, in order of precedence:
+<ol>
+<li><code>$XDG_CONFIG_HOME/lpsk31/lpsk31rc</code> (defaulting to
+<code>~/.config/lpsk31/lpsk31rc</code>)</li>
+<li><code>&lt;XDG_CONFIG_DIRS&gt;/lpsk31/lpsk31rc</code> for each
+directory in <code>$XDG_CONFIG_DIRS</code> (defaulting to
+<code>/etc/xdg/lpsk31/lpsk31rc</code>)</li>
+<li><code>~/lpsk31/lpsk31rc</code> (legacy location, auto-migrated to
+<code>$XDG_CONFIG_HOME/lpsk31/lpsk31rc</code> on first run; the legacy
+file is kept intact)</li>
+</ol>
+The configuration consists of sections (<code>[sound]</code>,
+<code>[runtime]</code>, <code>[rig]</code>, <code>[operator]</code>
+and <code>[macro-N]</code>) each containing <code>key = value</code>
+pairs. See the default file in the <code>default/</code> directory of
+the source tree for the full list of supported keys.</p>
 <p><a name="Compilation" id="Compilation"><b>3.
 Compilation</b></a><br>
 Before compiling lpsk31, it is possible to customize some entries
@@ -176,16 +234,18 @@ directory to produce the executable binary 'lpsk31'. This can then
 be copied to a suitable location, usually /usr/local/bin or
 /usr/bin. There is only this hypertext documentation file which you
 can copy to a location of your choice. Also the default lpsk31rc
-configuration file in the default/ directory must be copied to a
-directory named lpsk31 in the Home directory and then edited for
+configuration file in the default/ directory must be copied to the user's XDG config directory and then edited for
 proper operation.<br>
 You can also type 'make install' to install the 'lpsk31' binary
-into /usr/local/bin, this hypertext documentation in /usr/local/doc
-and the default lpsk31rc run time configuration file to a directory
-named lpsk31 in the Home directory. If ~/lpsk31 does not exist, it
-will be created.<br>
-Type 'make uninstall' to remove the 'lpsk31' binary, the
-'lpsk31.html' documentation file and the ~/lpsk31/ directory.<br>
+into /usr/local/bin and this hypertext documentation into
+/usr/local/share/doc. Type 'make install-config' to install the
+default lpsk31rc run time configuration file to the user's config
+directory (<code>$XDG_CONFIG_HOME/lpsk31/lpsk31rc</code>, defaulting
+to <code>~/.config/lpsk31/lpsk31rc</code>). The default file is not
+overwritten if you already have one.<br>
+Type 'make uninstall' to remove the 'lpsk31' binary and the
+'lpsk31.html' documentation file. It does not remove your config or
+log files.<br>
 Type 'make clean' to remove all files produced by compilation
 except for the 'lpsk31' binary, from the source directory.<br>
 Type 'make distclean' to remove all but the files that were
@@ -244,15 +304,14 @@ commands recognized by lpsk31 are displayed in this window. The
 Function keys <b>F1</b> to <b>F9</b> are reserved for starting
 Macro transmission. Each Macro has an associated label which is
 displayed next to the Function key that starts it and these labels
-are user-defined in the ~/lpsk31/lpsk31rc file together with the
+are user-defined in the ~/.config/lpsk31/lpsk31rc file together with the
 Macro text.<br>
 Please note that Macro transmission is interrupted with the
 <b>SPACE</b> key. <b>ESC</b> has no effect on Macros.</p>
 <p>The other commands are as follows:<br>
 <b>F10:</b> Opens a new QSO record form for entering call-sign,
-signal reports, QTH, Locator and Frequency. If the transceiver in
-use is an FT847 and CAT is enabled, then RST-out and Frequency are
-obtained automatically from the receiver via CAT commands.<br>
+signal reports, QTH, Locator and Frequency. If rig control is enabled, then RST-out and Frequency are
+obtained automatically from the receiver.<br>
 If unsaved data form a previous form exist in the buffer, a
 confirmation request to save to file is displayed.</p>
 <p>The <b>TAB</b> key makes the current field available to Macro
@@ -273,26 +332,26 @@ entries.</p>
 ~/lpsk31/log.adif after requesting a confirmation. This key works
 only when a new form has been edited in some way and Entered. F10
 cancels the Save.</p>
-<p><b>F12:</b> Toggle Transmit/Receive mode. If the transceiver in
-use is an FT847 and CAT is enabled, then it will be switched to SSB
-in Transmit and CW-N in Receive. This key will initiate a Pre-amble
-signal when going to Transmit and a Post-amble signal when going to
-Receive. Pre-amble is a steady tone followed by phase reversals and
-Post-amble the opposite. The duration of the tone and reversals is
-user-specified in ~/lpsk31/lpsk31rc.</p>
+<p><b>F12:</b> Toggle Transmit/Receive mode. If rig control is
+enabled, then the rig will be switched to USB or USB-D (the digital
+USB mode for BPSK and QPSK-USB; LSB or its digital equivalent for
+QPSK-LSB) in both Transmit and Receive. This key will initiate a
+Pre-amble signal when going to Transmit and a Post-amble signal when
+going to Receive. Pre-amble is a steady tone followed by phase
+reversals and Post-amble the opposite. The duration of the tone and
+reversals is user-specified in ~/.config/lpsk31/lpsk31rc.</p>
 <p><b>M or m:</b> Toggle PSK31 modes. There are three supported
-modes, BPSK, QPSK-USB and QPSK-LSB. If an FT847 Transceiver is in
-use and CAT is enabled, lpsk31 will switch the Transceiver to the
-right mode (USB for BPSK and QPSK-USB and LSB for QPSK-LSB).</p>
+modes, BPSK, QPSK-USB and QPSK-LSB. If rig control is enabled,
+lpsk31 will switch the rig to the right mode (USB for BPSK and
+QPSK-USB and LSB for QPSK-LSB).</p>
 <p><b>Ctrl-W:</b> Initiates transmission of the call-sign in
 CW/Morse. This command work only when lpsk31 is in Transmit
 mode.</p>
 <p><b>R or r:</b> Toggles the raw recording of all characters
 printed in the Receive and Transmit windows including Macros. This
 option is ON by default since it is quite useful.</p>
-<p><b>T or t:</b> Toggles CAT control for the FT847 transceiver. Do
-not activate if other rigs are in use since it will cause
-problems!</p>
+<p><b>T or t:</b> Toggles rig control. Do not activate if other
+rigs are in use since it will cause problems!</p>
 <p><b>K or k:</b> Capitalize letters in the Transmit window. All
 letters including text from Macros are capitalized before printing
 and transmission.</p>
@@ -317,9 +376,9 @@ normal operation of lpsk31 is suspended during signal
 recording.</p>
 <p><a name="Configure" id="Configure"><b>Configuration and
 set-up</b></a><br>
-After compilation and installation the ~/lpsk31/lpsk31rc run time
+After compilation and installation the ~/.config/lpsk31/lpsk31rc run time
 configuration file MUST be edited for proper operation! To do this,
-load ~/lpsk31/lpsk31rc into your favorite editor and make sure the
+load ~/.config/lpsk31/lpsk31rc into your favorite editor and make sure the
 you check ALL the configuration fields in the file and that you
 properly edit all the ones that must be edited. There are four
 sections, Sound card, lpsk31 Run time, Operator/QTH info and Macros
@@ -344,7 +403,7 @@ the receiver's volume level until a maximum indication of 80-90% is
 achieved. If the audio output is taken from a fixed-level outlet
 (like the 'data' port) the only way to set the correct input level
 is to edit the Recording/Capture level value in the
-~/lpsk31/lpsk31rc file by trial and error for the correct
+~/.config/lpsk31/lpsk31rc file by trial and error for the correct
 setting.</p>
 <p>To make sure that the receiver is accurately tuned for a 500 Hz
 audio output, slowly tune the receiver while watching the carrier
@@ -358,7 +417,7 @@ tuning step of 1 Hz or less if available is needed for this very
 tricky operation! Such are the demands of the PSK31 mode.</p>
 <p>For PSK31 transmission, the DSP output level needs to be set up
 for minimum distortion in the transmitter. The Volume/PCM level
-setting in ~/lpsk31/lpsk31rc can be edited to adjust the audio
+setting in ~/.config/lpsk31/lpsk31rc can be edited to adjust the audio
 output level but if the setting needs to be below approximately 20%
 then a simple resistive attenuator will be needed ahead of the
 transmitter's audio input. In each case the best way to set the
@@ -372,7 +431,7 @@ the final stage within its ratings.</p>
 signals</b></a><br>
 To receive BPSK signals, start lpsk31 in a console and tune-in a
 BPSK31 carrier as follows: Set up the receiver for a narrow-band
-mode (normally this would be CW-Narrow, and if available a DSP
+mode (USB or USB-D digital mode on most rigs, and if available a DSP
 audio filter with a bandwidth of 100 Hz or less should be used) and
 then slowly tune the receiver until the squelch level bar-graph
 peaks. Then carefully fine-tune the receiver until the phase slip
@@ -432,7 +491,7 @@ QSO Record form.</p>
 <p>To reply to a CQ, tune in the station accurately and type its
 call-sign, signal report and frequency in the QSO Record form. Then
 prepared Macros can be used to reply to the call and conduct a QSO.
-Have a look in ~/lpsk31/lpsk31rc for some typical prepared
+Have a look in ~/.config/lpsk31/lpsk31rc for some typical prepared
 Macros.<br>
 NOTE: You will need to edit at least some of these!!</p>
 <p><a name="Bugs" id="Bugs"><b>6. Bugs and deficiencies</b></a><br>
@@ -490,7 +549,7 @@ previous one.</p>
 <p><b>Version 0.8</b> Changed the sound card set-up function so
 that the Recording Level device (igain or reclev) is not selected
 automatically since this can be unreliable. Instead, the Recording
-Level device is specified in the ~/lpsk31/lpsk31rc file. PLEASE
+Level device is specified in the ~/.config/lpsk31/lpsk31rc file. PLEASE
 NOTE that this makes this version incompatible with existing
 lpsk31rc files! If you want to keep your original lpsk31rc files,
 then you need to add the Recording Level device name after the

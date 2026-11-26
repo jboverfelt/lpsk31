@@ -1,0 +1,15 @@
+BasedOnStyle: LLVM
+BreakBeforeBraces: Attach
+IndentWidth: 2
+UseTab: Never
+TabWidth: 8
+ColumnLimit: 80
+PointerAlignment: Left
+SortIncludes: false
+SpaceBeforeParens: Never
+SpacesInParens: Never
+SpaceInEmptyParentheses: false
+PenaltyReturnTypeOnItsOwnLine: 0
+KeepEmptyLinesAtTheStartOfBlocks: false
+ContinuationIndentWidth: 2
+DerivePointerAlignment: false

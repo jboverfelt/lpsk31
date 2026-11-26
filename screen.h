@@ -21,77 +21,68 @@
  *  http://www.gnu.org/copyleft/gpl.txt
  */
 
-
 #ifndef SCREEN_H
-#define SCREEN_H  1
+#define SCREEN_H 1
 
 #include "common.h"
 
 /************ CUSTOMIZE THESE DEFINITIONS FOR YOUR NEEDS *************/
 
-#define LABEL_COLOR      CYAN            /* Color of window labels   */
-#define BORDER_COLOR     CYAN            /* Color of window boxes    */
-#define KEYBD_COMMANDS   MAGENTA         /* Color of key commands    */
-#define STANDOUT_COLOR   YELLOW          /* Standout (bold) color    */
-#define FORM_COLOR       YELLOW_ON_BLUE  /* Color in QSO record form */
+#define LABEL_COLOR CYAN          /* Color of window labels   */
+#define BORDER_COLOR CYAN         /* Color of window boxes    */
+#define KEYBD_COMMANDS MAGENTA    /* Color of key commands    */
+#define STANDOUT_COLOR YELLOW     /* Standout (bold) color    */
+#define FORM_COLOR YELLOW_ON_BLUE /* Color in QSO record form */
 
 /* Definitions of some color pairs and color numbers */
-#define WHITE   		COLOR_PAIR( COLOR_WHITE )
-#define RED				COLOR_PAIR( COLOR_RED )
-#define GREEN			COLOR_PAIR( COLOR_GREEN )
-#define BLUE			COLOR_PAIR( COLOR_BLUE )
-#define CYAN			COLOR_PAIR( COLOR_CYAN )
-#define MAGENTA			COLOR_PAIR( COLOR_MAGENTA )
-#define YELLOW			COLOR_PAIR( COLOR_YELLOW ) | A_BOLD
-#define WHITE_ON_BLUE  	COLOR_PAIR( COLOR_WHITE_BLUE )
-#define YELLOW_ON_BLUE	COLOR_PAIR( COLOR_YELLOW_BLUE ) | A_BOLD
-#define RED_ON_BLUE   	COLOR_PAIR( COLOR_WHITE_RED )   | A_BOLD
-#define WHITE_ON_YELLOW	COLOR_PAIR( COLOR_WHITE_YELLOW )| A_BOLD
-#define WHITE_ON_GREEN 	COLOR_PAIR( COLOR_WHITE_GREEN ) | A_BOLD
+#define WHITE COLOR_PAIR(COLOR_WHITE)
+#define RED COLOR_PAIR(COLOR_RED)
+#define GREEN COLOR_PAIR(COLOR_GREEN)
+#define BLUE COLOR_PAIR(COLOR_BLUE)
+#define CYAN COLOR_PAIR(COLOR_CYAN)
+#define MAGENTA COLOR_PAIR(COLOR_MAGENTA)
+#define YELLOW COLOR_PAIR(COLOR_YELLOW) | A_BOLD
+#define WHITE_ON_BLUE COLOR_PAIR(COLOR_WHITE_BLUE)
+#define YELLOW_ON_BLUE COLOR_PAIR(COLOR_YELLOW_BLUE) | A_BOLD
+#define RED_ON_BLUE COLOR_PAIR(COLOR_WHITE_RED) | A_BOLD
+#define WHITE_ON_YELLOW COLOR_PAIR(COLOR_WHITE_YELLOW) | A_BOLD
+#define WHITE_ON_GREEN COLOR_PAIR(COLOR_WHITE_GREEN) | A_BOLD
 
 /***************** END OF CUSTOMIZABLE SECTION ***********************/
 
 /* Number of recognizable tags */
-#define NUM_OF_TAGS       13
+#define NUM_OF_TAGS 13
 
 /* Table of tag strings. !!MAX LENGTH 12 char!! */
-#define TAG_TABLE \
-{   \
-  "own-call", "own-name" , "own-qth" ,\
-  "own-loc" , "own-rst"  , "rem-call",\
-  "rem-name", "rem-qth"  , "rem-loc" ,\
-  "rem-rst" , "date-time", "op-freq" ,\
-  "app-version" \
-}
+#define TAG_TABLE                                                              \
+  {                                                                            \
+    "own-call", "own-name", "own-qth", "own-loc", "own-rst", "rem-call",       \
+      "rem-name", "rem-qth", "rem-loc", "rem-rst", "date-time", "op-freq",     \
+      "app-version"                                                            \
+  }
 
 /* QSO record type definition */
-typedef struct
-{
-  char
-	call[15],     /* Incoming station call-sign   */
-	rst_in[4],    /* Incoming station RST report  */
-	rst_out[4],   /* Outgoing station RST report  */
-	name[12],     /* Remote station operator name */
-	qth[14],      /* Remote station QTH loc. name */
-	loc[7],       /* Remote station QTH locator   */
-	freq[5],      /* QSO operating frequency MHz  */
-	date[12],     /* Calendar QSO date */
-	time[9],      /* Calendar QSO time */
-	date_adif[9], /* QSO date in ADIF format */
-	time_adif[5], /* QSO time in ADIF format */
-	mode[5];      /* Mode: BPSK/QPSK-USB/LSB */
+typedef struct {
+  char call[15],  /* Incoming station call-sign   */
+    rst_in[4],    /* Incoming station RST report  */
+    rst_out[4],   /* Outgoing station RST report  */
+    name[12],     /* Remote station operator name */
+    qth[14],      /* Remote station QTH loc. name */
+    loc[7],       /* Remote station QTH locator   */
+    freq[8],      /* QSO operating frequency MHz  */
+    date[12],     /* Calendar QSO date */
+    time[9],      /* Calendar QSO time */
+    date_adif[9], /* QSO date in ADIF format */
+    time_adif[5], /* QSO time in ADIF format */
+    mode[5];      /* Mode: BPSK/QPSK-USB/LSB */
 
 } qso_record_t;
 
 /* Table for plotting carrier phase */
-#define PLOT_TABLE \
-{ \
-  0,  8,  1,  7,  2,  6,  3,  3, \
-  3,  0,  3, -3,  2, -6,  1, -7, \
-  0, -8, -1, -7, -2, -6, -3, -3, \
- -3,  0, -3,  3, -2,  6, -1,  7, \
-  0,  8                          \
-}
+#define PLOT_TABLE                                                             \
+  {                                                                            \
+    0, 8, 1, 7, 2, 6, 3, 3, 3, 0, 3, -3, 2, -6, 1, -7, 0, -8, -1, -7, -2, -6,  \
+      -3, -3, -3, 0, -3, 3, -2, 6, -1, 7, 0, 8                                 \
+  }
 
 #endif
-
